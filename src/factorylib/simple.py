@@ -21,8 +21,22 @@ def converger_explicit(in_flow: np.ndarray) -> np.ndarray:
         np.ndarray: Items/second of each item, corresponding to the inputs
         ex. output index 0 corresponds to input index 0
     """
-    if in_flow.shape != (2,):
-        raise ValueError("Cases other than 2 inputs not supported")
-    a = in_flow[0]
-    b = in_flow[1]
-    return np.array([min(a, 1 - min(b, 0.5)), min(b, 1 - min(a, 0.5))])
+    if len(in_flow.shape) != 1:
+        raise ValueError("Input must be a vector (1D array)")
+    n = in_flow.shape[0]
+    if n == 0:
+        raise ValueError("Degenerate case of 0 inputs is not supported")
+    if n == 1:
+        return np.minimum(in_flow, np.array([1.0]))
+    i = np.argmin(in_flow)
+    if in_flow[i] >= 1 / n:
+        # All inputs are saturated, so we can just split the output evenly
+        return np.full_like(in_flow, 1 / n)
+    # Small input will always get its turn and output the full value
+    # We can remove it and recursively solve the subproblem
+    a = in_flow[i]
+    subproblem_scale = 1 - a
+    subproblem_in_flow = np.delete(in_flow, i) / subproblem_scale
+    subproblem_out_flow = converger_explicit(subproblem_in_flow) * subproblem_scale
+    out_flow = np.insert(subproblem_out_flow, i, a)
+    return out_flow
