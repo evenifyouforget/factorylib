@@ -29,12 +29,12 @@ def converger_explicit(in_flow: np.ndarray) -> np.ndarray:
     if n == 1:
         return np.minimum(in_flow, np.array([1.0]))
     i = np.argmin(in_flow)
-    if in_flow[i] >= 1 / n:
+    a = in_flow[i]
+    if a >= 1 / n:
         # All inputs are saturated, so we can just split the output evenly
         return np.full_like(in_flow, 1 / n)
     # Small input will always get its turn and output the full value
     # We can remove it and recursively solve the subproblem
-    a = in_flow[i]
     subproblem_scale = 1 - a
     subproblem_in_flow = np.delete(in_flow, i) / subproblem_scale
     subproblem_out_flow = converger_explicit(subproblem_in_flow) * subproblem_scale
