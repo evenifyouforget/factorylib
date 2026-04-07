@@ -5,17 +5,18 @@ Useful math models for factory games. Intended more as a playground than a produ
 To set up a venv and install locally including dependencies:
 
 ```sh
-TODO
+python -m venv venv && source venv/bin/activate
+pip install -e ".[dev]"
 ```
 
 To run the linter on all files, which may cause some files to change:
 
 ```sh
-TODO
+prek run --all-files
 ```
 
 To run all tests:
 
 ```sh
-TODO
+pytest
 ```
