@@ -35,6 +35,7 @@ def test_converger_explicit_2in_input_all_saturated(in_vec2):
     out_flow = converger_explicit(in_flow)
     assert np.all(isclose(out_flow, [0.5, 0.5]))
 
+
 def test_converger_explicit_2in_general(in_vec2):
     in_flow = np.array(in_vec2)
     a, b = in_flow
