@@ -82,7 +82,8 @@ def test_converger_explicit_in3_cherrypick(in_vec3):
     a, b, c = in_vec3
     if not 0 < a < min([1 / 3, b, c]):
         pytest.skip("Test does not cover this range")
-    # a always gets its full share, so b and c must fight for the remaining portion (1 - a)
+    # a always gets its full share, so b and c must
+    # compete for the remaining portion (1 - a)
     # this reduces to a 2-input subproblem
     # since the solver is normalized to 1 item/s, we need to scale
     # b, c -> 1 - a
