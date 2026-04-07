@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 from numpy import isclose
 from factorylib.simple import converger_explicit
