@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def converger_explicit(in_flow: np.ndarray) -> np.ndarray:
     """
     Directly calculate the output flows for a converger,
