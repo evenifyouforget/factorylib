@@ -12,14 +12,14 @@ requires-python = ">=3.12"
 dependencies = ["numpy"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov"]
+dev = ["pytest", "pytest-cov", "pytest-xdist"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/factorylib"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=factorylib --cov-report=term-missing --cov-report=xml"
+addopts = "-n auto --cov=factorylib --cov-report=term-missing --cov-report=xml"
 
 [tool.coverage.run]
 source = ["factorylib"]
