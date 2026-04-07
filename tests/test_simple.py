@@ -70,15 +70,8 @@ def test_converger_explicit_in3_input_all_saturated(in_vec3):
 
 def test_converger_explicit_in3_2_of_3(in_vec2):
     in_flow_2 = np.array(in_vec2)
-    a, b = in_flow_2
     out_flow_2 = converger_explicit(in_flow_2)
-    ap, bp = out_flow_2
-    in_flow = np.array([a, b, 0])
-    out_flow = converger_explicit(in_flow)
-    assert np.all(isclose(out_flow, [ap, bp, 0]))
-    in_flow = np.array([a, 0, b])
-    out_flow = converger_explicit(in_flow)
-    assert np.all(isclose(out_flow, [ap, 0, bp]))
-    in_flow = np.array([0, a, b])
-    out_flow = converger_explicit(in_flow)
-    assert np.all(isclose(out_flow, [0, ap, bp]))
+    for zero_pos in range(3):
+        in_flow = np.insert(in_flow_2, zero_pos, 0)
+        expected = np.insert(out_flow_2, zero_pos, 0)
+        assert np.all(isclose(converger_explicit(in_flow), expected))
