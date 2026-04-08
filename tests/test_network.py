@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from factorylib.network import Converger, Source, Splitter, solve
 
@@ -74,3 +75,36 @@ def test_stall_source():
     assert np.allclose(flows[c], [1, 0])
     assert np.allclose(flows[a], [0.5, 0])
     assert np.allclose(flows[b], [0.5, 0])
+
+
+@pytest.mark.parametrize("a_flow", [0, 0.1, 0.5, 0.9, 1])
+def test_split_converge(a_flow):
+    a = Source([a_flow])
+    b = Splitter(a, n=2)
+    c = Converger([b[0], b[1]])
+    flows = solve(c)
+    assert np.allclose(flows[c], [a_flow])
+    assert np.allclose(flows[b[0]], [a_flow / 2])
+    assert np.allclose(flows[b[1]], [a_flow / 2])
+
+
+@pytest.mark.parametrize("a_flow", [0, 0.1, 0.5, 0.9, 1])
+def test_zipper(a_flow):
+    a = Source([a_flow])
+    b = Splitter(a, n=2)
+    c = Splitter(b[0], n=2)
+    d = Converger([b[1], c[0]])
+    e = Converger([c[1], d])
+    flows = solve(e)
+    assert np.allclose(flows[e], [a_flow])
+
+
+@pytest.mark.parametrize("a_flow", [0, 0.1, 0.5, 0.9, 1])
+def test_reverse_zipper(a_flow):
+    a = Source([a_flow])
+    b = Splitter(a, n=2)
+    c = Splitter(b[0], n=2)
+    d = Converger([c[1], c[0]])
+    e = Converger([b[1], d])
+    flows = solve(e)
+    assert np.allclose(flows[e], [a_flow])
