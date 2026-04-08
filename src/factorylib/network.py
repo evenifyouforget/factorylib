@@ -138,7 +138,9 @@ def solve(node, *, tol: float = 1e-9, max_iter: int = 100) -> dict:
                     in_avail = float(np.sum(in_flow))
                     out_caps = np.array([scalar_demand[p] for p in s._ports])
                     if in_avail > _EPS:
-                        splitter_cache[id(s)] = converger_explicit(out_caps / in_avail) * in_avail
+                        splitter_cache[id(s)] = (
+                            converger_explicit(out_caps / in_avail) * in_avail
+                        )
                     else:
                         splitter_cache[id(s)] = np.zeros(s.n)
                 port_fracs = splitter_cache[id(s)]
