@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "factorylib"
+version = "0.1.0"
+description = "Useful math models for factory games"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "pytest-xdist"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/factorylib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-n auto --cov=factorylib --cov-report=term-missing --cov-report=xml"
+
+[tool.coverage.run]
+source = ["factorylib"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
