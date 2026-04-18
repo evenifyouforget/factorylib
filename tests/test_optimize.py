@@ -1,20 +1,23 @@
 import numpy as np
 import pytest
 
-from factorylib.optimize import Formula, OptimizeResult, maximize_dollar
-
+from factorylib.optimize import Formula, maximize_dollar
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def make_formula(consumption, output, limit=np.inf):
-    return Formula(consumption=np.array(consumption, dtype=float), output=output, limit=limit)
+    return Formula(
+        consumption=np.array(consumption, dtype=float), output=output, limit=limit
+    )
 
 
 # ---------------------------------------------------------------------------
 # Basic correctness
 # ---------------------------------------------------------------------------
+
 
 def test_single_formula_supply_binding():
     """Supply constraint is tighter than the unbounded formula limit."""
@@ -93,6 +96,7 @@ def test_resource_slack_correct():
 # Fast path / edge cases
 # ---------------------------------------------------------------------------
 
+
 def test_zero_supply_fast_path():
     f = make_formula([1.0], output=5.0)
     res = maximize_dollar([0.0], [f])
@@ -120,6 +124,7 @@ def test_formula_output_zero():
 # Parametrized linearity check
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("scale", [0.5, 1.0, 2.0, 10.0])
 def test_supply_scaling(scale):
     """dollar_output should scale linearly with supply."""
@@ -132,6 +137,7 @@ def test_supply_scaling(scale):
 # ---------------------------------------------------------------------------
 # Input validation
 # ---------------------------------------------------------------------------
+
 
 def test_negative_supply_raises():
     f = make_formula([1.0], output=1.0)

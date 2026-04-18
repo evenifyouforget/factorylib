@@ -110,10 +110,7 @@ def maximize_dollar(
     # consumption shape: (N, M) — row = resource, col = formula
     consumption = np.stack([f.consumption for f in formulas], axis=1)
     c_obj = -np.array([f.output for f in formulas], dtype=float)
-    bounds = [
-        (0.0, None if np.isinf(f.limit) else float(f.limit))
-        for f in formulas
-    ]
+    bounds = [(0.0, None if np.isinf(f.limit) else float(f.limit)) for f in formulas]
 
     result = linprog(
         c_obj,
