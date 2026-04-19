@@ -187,7 +187,8 @@ def test_wuling_1p2_hx_uncapped():
 @pytest.mark.parametrize(
     "disabled,expected_dollar,expected_rates,expected_slack,expected_z,expected_mt",
     [
-        # sc: LC Battery picks up Originium Ore; Xiranite passthrough absorbs freed Xiranite
+        # sc: LC Battery picks up Originium Ore;
+        #     Xiranite passthrough absorbs freed Xiranite
         (
             "sc",
             2662 / 3,
@@ -223,7 +224,8 @@ def test_wuling_1p2_hx_uncapped():
             8,
             [0, 50, 0, 0],
         ),
-        # ya: Hetonite Part covers Cuprium Ore instead; Yazhen Syringe C handles Ferrium remainder
+        # ya: Hetonite Part covers Cuprium Ore instead;
+        #     Yazhen Syringe C handles Ferrium remainder
         (
             "ya",
             1088.5,
@@ -285,9 +287,11 @@ def test_wuling_1p2_formula_disabled(
     [
         # $24: well below breakpoint; never used
         (24, 1088.5, [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0], 7, [0, 50, 0, 0]),
-        # $48: exact breakpoint — shadow cost of 30 FerOre + 240 CupOre equals output; not used
+        # $48: exact breakpoint — shadow cost of 30 FerOre + 240 CupOre equals output;
+        #      not used (LP tiebreaks toward zero)
         (48, 1088.5, [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0], 7, [0, 50, 0, 0]),
-        # $49: 1 above breakpoint; Hetonite Part switches on, displacing Yazhen Syringe A
+        # $49: $1 above breakpoint; Hetonite Part switches on,
+        #      displacing Yazhen Syringe A on Cuprium Ore
         (49, 1093, [53 / 24, 0, 3 / 4, 26 / 27, 0, 1 / 96, 0, 0], 7, [0, 50, 0, 0]),
         # $60: well above breakpoint
         (60, 1142.5, [53 / 24, 0, 3 / 4, 26 / 27, 0, 1 / 96, 0, 0], 7, [0, 50, 0, 0]),
@@ -316,9 +320,11 @@ def test_wuling_1p2_hetonite_worth(
 @pytest.mark.parametrize(
     "hx_per_item,expected_dollar,expected_rates,expected_z,expected_mt",
     [
-        # $23: below breakpoint (603/26 ≈ 23.19); Z=8 with Xiranite passthrough preferred
+        # $23: below breakpoint (603/26 ≈ 23.19);
+        #      Z=8 with Xiranite passthrough preferred
         (23, 1066.5, [53 / 24, 0, 0, 0, 3 / 2, 19 / 96, 134, 0], 8, [0, 50, 0, 0]),
-        # $603/26: exact breakpoint — Z=7 and Z=8 yield equal dollar output; solver picks Z=7
+        # $603/26: exact breakpoint — Z=7 and Z=8 yield equal dollar output;
+        #          solver picks Z=7
         (
             603 / 26,
             1066.5,
