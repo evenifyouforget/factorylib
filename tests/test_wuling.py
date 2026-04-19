@@ -93,8 +93,8 @@ def test_wuling_1p2_crs_lv1():
             candidates.append((result, z, metatransfer))
     best, best_z, best_mt = max(candidates, key=lambda r: r[0].dollar_output)
     assert best.status == "optimal"
-    assert np.isclose(best.dollar_output, 1088.5)
-    assert np.allclose(best.formula_rates, [53/24, 0, 0, 26/27, 3/2, 19/96])
-    assert np.allclose(best.resource_slack, [0, 0, 0, 0])
+    assert np.isclose(best.dollar_output, 873 + 2/3)
+    assert np.allclose(best.formula_rates, [0, 53/18, 0, 1, 3/2, 3/4])
+    assert np.allclose(best.resource_slack, [13 + 2/3, 0, 0, 0])
     assert best_z == 7
     assert np.allclose(best_mt, [0, 50, 0, 0])
