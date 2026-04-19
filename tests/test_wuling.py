@@ -34,7 +34,9 @@ def _make_wuling_formulas(purification=True):
     }
 
 
-def _search(base_income, formulas, max_forges=8, metatransfers=None, fix_hx_limit=False):
+def _search(
+    base_income, formulas, max_forges=8, metatransfers=None, fix_hx_limit=False
+):
     """Search over forge allocations and metatransfer choices.
 
     Returns (best_result, best_z, best_mt).
@@ -66,7 +68,9 @@ def test_wuling_1p2_full():
     best, best_z, best_mt = _search(BASE_INCOME, f)
     assert best.status == "optimal"
     assert np.isclose(best.dollar_output, 1088.5)
-    assert np.allclose(best.formula_rates, [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0])
+    assert np.allclose(
+        best.formula_rates, [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0]
+    )
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert best_z == 7
     assert np.allclose(best_mt, [0, 50, 0, 0])
@@ -87,7 +91,9 @@ def test_wuling_1p2_z6_fixed():
     best, best_mt = max(cands, key=lambda x: x[0].dollar_output)
     assert best.status == "optimal"
     assert np.isclose(best.dollar_output, 1043.5)
-    assert np.allclose(best.formula_rates, [53/24, 0, 0, 37/54, 3/2, 19/96, 0, 0])
+    assert np.allclose(
+        best.formula_rates, [53 / 24, 0, 0, 37 / 54, 3 / 2, 19 / 96, 0, 0]
+    )
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert np.allclose(best_mt, [0, 50, 0, 0])
 
@@ -102,7 +108,9 @@ def test_wuling_1p2_z7_fixed():
     best, best_mt = max(cands, key=lambda x: x[0].dollar_output)
     assert best.status == "optimal"
     assert np.isclose(best.dollar_output, 1088.5)
-    assert np.allclose(best.formula_rates, [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0])
+    assert np.allclose(
+        best.formula_rates, [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0]
+    )
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert np.allclose(best_mt, [0, 50, 0, 0])
 
@@ -118,7 +126,7 @@ def test_wuling_1p2_z8_fixed():
     best, best_mt = max(cands, key=lambda x: x[0].dollar_output)
     assert best.status == "optimal"
     assert np.isclose(best.dollar_output, 1066.5)
-    assert np.allclose(best.formula_rates, [53/24, 0, 0, 0, 3/2, 19/96, 134, 0])
+    assert np.allclose(best.formula_rates, [53 / 24, 0, 0, 0, 3 / 2, 19 / 96, 134, 0])
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert np.allclose(best_mt, [0, 50, 0, 0])
 
@@ -134,9 +142,9 @@ def test_wuling_1p2_hx_lc_ya_only():
     fonly = {k: f[k] for k in ["lc", "hx", "ya"]}
     best, best_z, best_mt = _search(BASE_INCOME, fonly)
     assert best.status == "optimal"
-    assert np.isclose(best.dollar_output, 2405/3)
-    assert np.allclose(best.formula_rates, [53/18, 1, 3/2])
-    assert np.allclose(best.resource_slack, [41/3, 0, 90, 0])
+    assert np.isclose(best.dollar_output, 2405 / 3)
+    assert np.allclose(best.formula_rates, [53 / 18, 1, 3 / 2])
+    assert np.allclose(best.resource_slack, [41 / 3, 0, 90, 0])
     assert best_z == 7
     assert np.allclose(best_mt, [0, 50, 0, 0])
 
@@ -147,8 +155,10 @@ def test_wuling_1p2_sc_capped_2():
     f["sc"].limit = 2
     best, best_z, best_mt = _search(BASE_INCOME, f)
     assert best.status == "optimal"
-    assert np.isclose(best.dollar_output, 6421/6)
-    assert np.allclose(best.formula_rates, [2, 5/18, 0, 317/324, 3/2, 1/4, 0, 0])
+    assert np.isclose(best.dollar_output, 6421 / 6)
+    assert np.allclose(
+        best.formula_rates, [2, 5 / 18, 0, 317 / 324, 3 / 2, 1 / 4, 0, 0]
+    )
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert best_z == 7
     assert np.allclose(best_mt, [0, 50, 0, 0])
@@ -161,7 +171,9 @@ def test_wuling_1p2_hx_uncapped():
     best, best_z, best_mt = _search(BASE_INCOME, f, fix_hx_limit=True)
     assert best.status == "optimal"
     assert np.isclose(best.dollar_output, 1133.5)
-    assert np.allclose(best.formula_rates, [53/24, 0, 0, 67/54, 3/2, 19/96, 0, 0])
+    assert np.allclose(
+        best.formula_rates, [53 / 24, 0, 0, 67 / 54, 3 / 2, 19 / 96, 0, 0]
+    )
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert best_z == 8
     assert np.allclose(best_mt, [0, 50, 0, 0])
@@ -176,21 +188,77 @@ def test_wuling_1p2_hx_uncapped():
     "disabled,expected_dollar,expected_rates,expected_slack,expected_z,expected_mt",
     [
         # sc: LC Battery picks up Originium Ore; Xiranite passthrough absorbs freed Xiranite
-        ("sc",  2662/3,  [0, 53/18, 0, 1, 3/2, 3/4, 41/3, 0],   [0, 0, 0, 0],   7, [0, 50, 0, 0]),
+        (
+            "sc",
+            2662 / 3,
+            [0, 53 / 18, 0, 1, 3 / 2, 3 / 4, 41 / 3, 0],
+            [0, 0, 0, 0],
+            7,
+            [0, 50, 0, 0],
+        ),
         # lc: unused in full solution; no change
-        ("lc",  1088.5,  [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0], [0, 0, 0, 0],  7, [0, 50, 0, 0]),
+        (
+            "lc",
+            1088.5,
+            [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0],
+            [0, 0, 0, 0],
+            7,
+            [0, 50, 0, 0],
+        ),
         # hp: unused in full solution; no change
-        ("hp",  1088.5,  [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0], [0, 0, 0, 0],  7, [0, 50, 0, 0]),
+        (
+            "hp",
+            1088.5,
+            [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0],
+            [0, 0, 0, 0],
+            7,
+            [0, 50, 0, 0],
+        ),
         # hx: all forges → Xiranite supply; Xiranite passthrough absorbs excess
-        ("hx",  1066.5,  [53/24, 0, 0, 0, 3/2, 19/96, 134, 0],   [0, 0, 0, 0],  8, [0, 50, 0, 0]),
+        (
+            "hx",
+            1066.5,
+            [53 / 24, 0, 0, 0, 3 / 2, 19 / 96, 134, 0],
+            [0, 0, 0, 0],
+            8,
+            [0, 50, 0, 0],
+        ),
         # ya: Hetonite Part covers Cuprium Ore instead; Yazhen Syringe C handles Ferrium remainder
-        ("ya",  1088.5,  [53/24, 0, 3/4, 26/27, 0, 1/96, 0, 0],  [0, 0, 0, 0],  7, [0, 50, 0, 0]),
+        (
+            "ya",
+            1088.5,
+            [53 / 24, 0, 3 / 4, 26 / 27, 0, 1 / 96, 0, 0],
+            [0, 0, 0, 0],
+            7,
+            [0, 50, 0, 0],
+        ),
         # yc: Ferrium Ore partially unspent (-1.25/min)
-        ("yc",  1087.5,  [53/24, 0, 3/4, 26/27, 0, 0, 0, 0],     [0, 0, 5/4, 0], 7, [0, 50, 0, 0]),
+        (
+            "yc",
+            1087.5,
+            [53 / 24, 0, 3 / 4, 26 / 27, 0, 0, 0, 0],
+            [0, 0, 5 / 4, 0],
+            7,
+            [0, 50, 0, 0],
+        ),
         # xi: Xiranite passthrough unused in full solution; no change
-        ("xi",  1088.5,  [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0], [0, 0, 0, 0],  7, [0, 50, 0, 0]),
+        (
+            "xi",
+            1088.5,
+            [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0],
+            [0, 0, 0, 0],
+            7,
+            [0, 50, 0, 0],
+        ),
         # cp: Cuprium Part passthrough unused in full solution; no change
-        ("cp",  1088.5,  [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0], [0, 0, 0, 0],  7, [0, 50, 0, 0]),
+        (
+            "cp",
+            1088.5,
+            [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0],
+            [0, 0, 0, 0],
+            7,
+            [0, 50, 0, 0],
+        ),
     ],
 )
 def test_wuling_1p2_formula_disabled(
@@ -216,15 +284,15 @@ def test_wuling_1p2_formula_disabled(
     "hp_per_item,expected_dollar,expected_rates,expected_z,expected_mt",
     [
         # $24: well below breakpoint; never used
-        (24,  1088.5,  [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0],  7, [0, 50, 0, 0]),
+        (24, 1088.5, [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0], 7, [0, 50, 0, 0]),
         # $48: exact breakpoint — shadow cost of 30 FerOre + 240 CupOre equals output; not used
-        (48,  1088.5,  [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0],  7, [0, 50, 0, 0]),
+        (48, 1088.5, [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0], 7, [0, 50, 0, 0]),
         # $49: 1 above breakpoint; Hetonite Part switches on, displacing Yazhen Syringe A
-        (49,  1093,    [53/24, 0, 3/4, 26/27, 0, 1/96, 0, 0],   7, [0, 50, 0, 0]),
+        (49, 1093, [53 / 24, 0, 3 / 4, 26 / 27, 0, 1 / 96, 0, 0], 7, [0, 50, 0, 0]),
         # $60: well above breakpoint
-        (60,  1142.5,  [53/24, 0, 3/4, 26/27, 0, 1/96, 0, 0],   7, [0, 50, 0, 0]),
+        (60, 1142.5, [53 / 24, 0, 3 / 4, 26 / 27, 0, 1 / 96, 0, 0], 7, [0, 50, 0, 0]),
         # $80: strongly prefer Hetonite Part
-        (80,  1232.5,  [53/24, 0, 3/4, 26/27, 0, 1/96, 0, 0],   7, [0, 50, 0, 0]),
+        (80, 1232.5, [53 / 24, 0, 3 / 4, 26 / 27, 0, 1 / 96, 0, 0], 7, [0, 50, 0, 0]),
     ],
 )
 def test_wuling_1p2_hetonite_worth(
@@ -249,15 +317,27 @@ def test_wuling_1p2_hetonite_worth(
     "hx_per_item,expected_dollar,expected_rates,expected_z,expected_mt",
     [
         # $23: below breakpoint (603/26 ≈ 23.19); Z=8 with Xiranite passthrough preferred
-        (23,       1066.5,    [53/24, 0, 0, 0, 3/2, 19/96, 134, 0],   8, [0, 50, 0, 0]),
+        (23, 1066.5, [53 / 24, 0, 0, 0, 3 / 2, 19 / 96, 134, 0], 8, [0, 50, 0, 0]),
         # $603/26: exact breakpoint — Z=7 and Z=8 yield equal dollar output; solver picks Z=7
-        (603/26,   1066.5,    [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0], 7, [0, 50, 0, 0]),
+        (
+            603 / 26,
+            1066.5,
+            [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0],
+            7,
+            [0, 50, 0, 0],
+        ),
         # $24: 1 above breakpoint; Heavy Xiranite switches on with Z=7 allocation
-        (24,       6427/6,    [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0], 7, [0, 50, 0, 0]),
+        (
+            24,
+            6427 / 6,
+            [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0],
+            7,
+            [0, 50, 0, 0],
+        ),
         # $27: base case (well above breakpoint)
-        (27,       1088.5,    [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0], 7, [0, 50, 0, 0]),
+        (27, 1088.5, [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0], 7, [0, 50, 0, 0]),
         # $54: same allocation; high value
-        (54,       1244.5,    [53/24, 0, 0, 26/27, 3/2, 19/96, 0, 0], 7, [0, 50, 0, 0]),
+        (54, 1244.5, [53 / 24, 0, 0, 26 / 27, 3 / 2, 19 / 96, 0, 0], 7, [0, 50, 0, 0]),
     ],
 )
 def test_wuling_1p2_heavy_xiranite_worth(
@@ -284,7 +364,9 @@ def test_wuling_1p2_7_forges():
     best, best_z, best_mt = _search(BASE_INCOME, f, max_forges=7)
     assert best.status == "optimal"
     assert np.isclose(best.dollar_output, 1043.5)
-    assert np.allclose(best.formula_rates, [53/24, 0, 0, 37/54, 3/2, 19/96, 0, 0])
+    assert np.allclose(
+        best.formula_rates, [53 / 24, 0, 0, 37 / 54, 3 / 2, 19 / 96, 0, 0]
+    )
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert best_z == 6
     assert np.allclose(best_mt, [0, 50, 0, 0])
@@ -298,7 +380,7 @@ def test_wuling_1p2_more_cuprium():
     best, best_z, best_mt = _search(bi, f)
     assert best.status == "optimal"
     assert np.isclose(best.dollar_output, 1154.5)
-    assert np.allclose(best.formula_rates, [53/24, 0, 0, 26/27, 2, 19/96, 0, 0])
+    assert np.allclose(best.formula_rates, [53 / 24, 0, 0, 26 / 27, 2, 19 / 96, 0, 0])
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert best_z == 7
     assert np.allclose(best_mt, [0, 50, 0, 0])
@@ -311,7 +393,9 @@ def test_wuling_1p2_no_purification():
     best, best_z, best_mt = _search(BASE_INCOME, f)
     assert best.status == "optimal"
     assert np.isclose(best.dollar_output, 1040.0)
-    assert np.allclose(best.formula_rates, [53/24, 0, 0, 0, 3/2, 19/96, 215/2, 0])
+    assert np.allclose(
+        best.formula_rates, [53 / 24, 0, 0, 0, 3 / 2, 19 / 96, 215 / 2, 0]
+    )
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert best_z == 8
     assert np.allclose(best_mt, [0, 50, 0, 0])
