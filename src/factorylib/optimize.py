@@ -36,8 +36,8 @@ class Formula:
             raise ValueError("consumption must be a 1-D array")
         if self.output < 0:
             raise ValueError("output must be non-negative")
-        if self.limit <= 0:
-            raise ValueError("limit must be positive (use np.inf for unbounded)")
+        if self.limit < 0:
+            raise ValueError("limit must be non-negative (use np.inf for unbounded)")
 
 
 @dataclass

@@ -162,9 +162,9 @@ def test_formula_negative_output_raises():
         make_formula([1.0], output=-1.0)
 
 
-def test_formula_zero_limit_raises():
-    with pytest.raises(ValueError):
-        make_formula([1.0], output=1.0, limit=0.0)
+def test_formula_zero_limit_allowed():
+    f = make_formula([1.0], output=1.0, limit=0.0)
+    assert f.limit == 0.0
 
 
 def test_formula_negative_limit_raises():
