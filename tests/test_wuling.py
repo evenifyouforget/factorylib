@@ -21,7 +21,7 @@ METATRANSFERS = [[0, 50, 0, 0], [0, 0, 25, 0]]
 def _make_wuling_formulas(purification=True):
     """Return fresh dict of all 8 Wuling 1.2 formulas."""
     xi_sc = 60 * (4 / 5 if purification else 1)
-    xi_hx = 60 + 60 * (4 / 5 if purification else 1)
+    xi_hx = 60 + 30 * (4 / 5 if purification else 1)
     return {
         "sc": make_formula([xi_sc, 240, 30, 0], output=54 * 6),
         "lc": make_formula([30, 180, 0, 0], output=25 * 6),
