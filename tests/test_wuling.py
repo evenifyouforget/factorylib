@@ -68,9 +68,7 @@ def test_wuling_1p2_full():
     best, best_z, best_mt = _search(BASE_INCOME, f)
     assert best.status == "optimal"
     assert np.isclose(best.dollar_output, 2229 / 2)
-    assert np.allclose(
-        best.formula_rates, [53 / 24, 0, 0, 1, 3 / 2, 19 / 96, 20, 0]
-    )
+    assert np.allclose(best.formula_rates, [53 / 24, 0, 0, 1, 3 / 2, 19 / 96, 20, 0])
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert best_z == 7
     assert np.allclose(best_mt, [0, 50, 0, 0])
@@ -108,9 +106,7 @@ def test_wuling_1p2_z7_fixed():
     best, best_mt = max(cands, key=lambda x: x[0].dollar_output)
     assert best.status == "optimal"
     assert np.isclose(best.dollar_output, 2229 / 2)
-    assert np.allclose(
-        best.formula_rates, [53 / 24, 0, 0, 1, 3 / 2, 19 / 96, 20, 0]
-    )
+    assert np.allclose(best.formula_rates, [53 / 24, 0, 0, 1, 3 / 2, 19 / 96, 20, 0])
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert np.allclose(best_mt, [0, 50, 0, 0])
 
@@ -156,9 +152,7 @@ def test_wuling_1p2_sc_capped_2():
     best, best_z, best_mt = _search(BASE_INCOME, f)
     assert best.status == "optimal"
     assert np.isclose(best.dollar_output, 3286 / 3)
-    assert np.allclose(
-        best.formula_rates, [2, 5 / 18, 0, 1, 3 / 2, 1 / 4, 65 / 3, 0]
-    )
+    assert np.allclose(best.formula_rates, [2, 5 / 18, 0, 1, 3 / 2, 1 / 4, 65 / 3, 0])
     assert np.allclose(best.resource_slack, [0, 0, 0, 0])
     assert best_z == 7
     assert np.allclose(best_mt, [0, 50, 0, 0])
