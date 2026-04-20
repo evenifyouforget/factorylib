@@ -317,7 +317,8 @@ def test_wuling_1p2_hetonite_worth(
     [
         # $18: below breakpoint ($19); Z=8 with Xiranite passthrough preferred
         (18, 2133 / 2, [53 / 24, 0, 0, 0, 3 / 2, 19 / 96, 134, 0], 8, [0, 50, 0, 0]),
-        # $19: exact breakpoint — Z=7 and Z=8 yield equal dollar output; solver picks Z=7
+        # $19: exact breakpoint — Z=7 and Z=8 yield equal dollar output;
+        #      solver picks Z=7
         (19, 2133 / 2, [53 / 24, 0, 0, 1, 3 / 2, 19 / 96, 20, 0], 7, [0, 50, 0, 0]),
         # $20: $1 above breakpoint; Heavy Xiranite switches on with Z=7 allocation
         (20, 2145 / 2, [53 / 24, 0, 0, 1, 3 / 2, 19 / 96, 20, 0], 7, [0, 50, 0, 0]),
