@@ -170,3 +170,17 @@ def test_formula_zero_limit_allowed():
 def test_formula_negative_limit_raises():
     with pytest.raises(ValueError):
         make_formula([1.0], output=1.0, limit=-5.0)
+
+
+def test_formula_2d_consumption_raises():
+    with pytest.raises(ValueError, match="1-D"):
+        Formula(consumption=np.array([[1.0, 2.0]]), output=1.0)
+
+
+def test_unbounded_lp():
+    # Formula consuming no resources with infinite limit — LP is unbounded
+    f = make_formula([0.0], output=1.0)
+    res = maximize_dollar([10.0], [f])
+    assert res.status == "unbounded"
+    assert res.dollar_output == 0.0
+    assert np.allclose(res.formula_rates, [0.0])
