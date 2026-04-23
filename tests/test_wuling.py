@@ -375,7 +375,7 @@ def test_wuling_1p2_more_cuprium():
 
 
 def test_wuling_1p2_no_purification():
-    # Purification Building offline: no 4/5 reduction on Xiranite cost
+    # Purification Building not used: no 4/5 reduction on Xiranite cost
     # SC Wuling Battery: 60 Xi (up from 48); Heavy Xiranite: 90 Xi (up from 84)
     f = _make_wuling_formulas(purification=False)
     best, best_z, best_mt = _search(BASE_INCOME, f)
