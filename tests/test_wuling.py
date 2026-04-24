@@ -158,6 +158,34 @@ def test_wuling_1p2_sc_capped_2():
     assert np.allclose(best_mt, [0, 50, 0, 0])
 
 
+def test_wuling_1p2_sc_capped_2_no_lc():
+    # SC capped at 2 multiples; LC Wuling Battery banned
+    f = _make_wuling_formulas()
+    f["sc"].limit = 2
+    f["lc"].limit = 0
+    best, best_z, best_mt = _search(BASE_INCOME, f)
+    assert best.status == "optimal"
+    assert np.isclose(best.dollar_output, 1082)
+    assert np.allclose(best.formula_rates, [2, 0, 0, 1, 3 / 2, 11 / 24, 30, 0])
+    assert np.allclose(best.resource_slack, [0, 0, 0, 0])
+    assert best_z == 7
+    assert np.allclose(best_mt, [0, 0, 25, 0])
+
+
+def test_wuling_1p2_sc_capped_2_no_lc_no_mt():
+    # SC capped at 2 multiples; LC banned; no metatransfer
+    f = _make_wuling_formulas()
+    f["sc"].limit = 2
+    f["lc"].limit = 0
+    best, best_z, best_mt = _search(BASE_INCOME, f, metatransfers=[[0, 0, 0, 0]])
+    assert best.status == "optimal"
+    assert np.isclose(best.dollar_output, 1062)
+    assert np.allclose(best.formula_rates, [2, 0, 0, 1, 3 / 2, 1 / 4, 30, 0])
+    assert np.allclose(best.resource_slack, [0, 0, 0, 0])
+    assert best_z == 7
+    assert np.allclose(best_mt, [0, 0, 0, 0])
+
+
 def test_wuling_1p2_hx_uncapped():
     # Heavy Xiranite unlimited — forge constraint removed
     f = _make_wuling_formulas()
