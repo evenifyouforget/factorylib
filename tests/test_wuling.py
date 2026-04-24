@@ -172,6 +172,22 @@ def test_wuling_1p2_sc_capped_2_no_lc():
     assert np.allclose(best_mt, [0, 0, 25, 0])
 
 
+def test_wuling_1p2_sc_capped_2_no_lc_hc():
+    # SC capped at 2; LC banned; HC Valley Battery available (180 Ori, 120 Fer)
+    # HC Battery not used — shadow price of Originium+Ferrium too high vs output
+    f = _make_wuling_formulas()
+    f["sc"].limit = 2
+    f["lc"].limit = 0
+    f["hc"] = make_formula([0, 180, 120, 0], output=54 * 6 * 1100 / 3200)
+    best, best_z, best_mt = _search(BASE_INCOME, f)
+    assert best.status == "optimal"
+    assert np.isclose(best.dollar_output, 1082)
+    assert np.allclose(best.formula_rates, [2, 0, 0, 1, 3 / 2, 11 / 24, 30, 0, 0])
+    assert np.allclose(best.resource_slack, [0, 0, 0, 0])
+    assert best_z == 7
+    assert np.allclose(best_mt, [0, 0, 25, 0])
+
+
 def test_wuling_1p2_sc_capped_2_no_lc_no_mt():
     # SC capped at 2 multiples; LC banned; no metatransfer
     f = _make_wuling_formulas()
