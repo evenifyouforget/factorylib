@@ -7,6 +7,10 @@ Uses intermediate variables (supply=0 + negative consumption):
 Resources: [xi, ori_ore, ferrium, cuprium, heavy_xi, hetonite]
 Intermediates (supply=0): heavy_xi (index 4), hetonite (index 5).
 
+Formula order (indices 0-12):
+  sc(0), lc(1), hx_make(2), hx_sell(3), ya(4), yc(5),
+  xi_sell(6), cp_sell(7), hetonite_make(8), hp_sell(9), hc(10), xg(11), jg(12)
+
 Breakpoints (bc=0):
   bp1_price = 904/15   -- jg_price where z=7 jg=1 ties z=8 jg=0
   bp2_price = 1279099/11520 -- jg_price where z=6 jg=2 ties z=7 jg=1
@@ -105,33 +109,53 @@ def test_wuling_new_model_equiv():
 # bp1 = 904/15 ≈ 60.27: below → z=8 no jg; above → z=7 jg=1
 # bp2 = 1279099/11520 ≈ 111.03: below → z=7 jg=1; above → z=6 jg=2
 #
-# Below bp1 (z=8): sc=53/24, ya=3/2, yc=19/96, xg=67/45, jg=0
-# Above bp1 (z=7): sc=53/24, hx_make=1, ya=11/10, yc=71/480,
-#                  hetonite_make=1/5, xg=2/9, jg=1  (same rates for both test pts)
-# Above bp2 (z=6): sc=1/4, hx_make=2, ya=7/10, hetonite_make=2/5,
-#                  hc=191/240, jg=2  (ferrium metatransfer; sc takes the 12 leftover xi)
+# Below bp1 (z=8):  sc=53/24, ya=3/2, yc=19/96, xg=67/45, jg=0
+# Above bp1 (z=7):  sc=53/24, hx_make=1, ya=11/10, yc=71/480,
+#                   hetonite_make=1/5, xg=2/9, jg=1  (same rates for both test pts)
+# Above bp2 (z=6):  sc=1/4, hx_make=2, ya=7/10, hetonite_make=2/5,
+#                   hc=191/240, jg=2  (ferrium metatransfer; ori slack=1107/4)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "jg_price,expected_z,expected_mt,expected_jg,expected_dollar",
+    "jg_price,expected_z,expected_mt,expected_rates,expected_slack,expected_dollar",
     [
-        (60,  8, [0, 50, 0, 0, 0, 0], 0, 7739 / 6),
-        (61,  7, [0, 50, 0, 0, 0, 0], 1, 38827 / 30),
-        (111, 7, [0, 50, 0, 0, 0, 0], 1, 47827 / 30),
-        (112, 6, [0, 0, 25, 0, 0, 0], 2, 1027863 / 640),
+        (
+            60, 8, [0, 50, 0, 0, 0, 0],
+            [53/24, 0, 0, 0, 3/2, 19/96, 0, 0, 0, 0, 0, 67/45, 0],
+            [0, 0, 0, 0, 0, 0],
+            7739/6,
+        ),
+        (
+            61, 7, [0, 50, 0, 0, 0, 0],
+            [53/24, 0, 1, 0, 11/10, 71/480, 0, 0, 1/5, 0, 0, 2/9, 1],
+            [0, 0, 0, 0, 0, 0],
+            38827/30,
+        ),
+        (
+            111, 7, [0, 50, 0, 0, 0, 0],
+            [53/24, 0, 1, 0, 11/10, 71/480, 0, 0, 1/5, 0, 0, 2/9, 1],
+            [0, 0, 0, 0, 0, 0],
+            47827/30,
+        ),
+        (
+            112, 6, [0, 0, 25, 0, 0, 0],
+            [1/4, 0, 2, 0, 7/10, 0, 0, 0, 2/5, 0, 191/240, 0, 2],
+            [0, 1107/4, 0, 0, 0, 0],
+            1027863/640,
+        ),
     ],
 )
 def test_jade_gourd_price_breakpoints(
-    jg_price, expected_z, expected_mt, expected_jg, expected_dollar
+    jg_price, expected_z, expected_mt, expected_rates, expected_slack, expected_dollar
 ):
     f = _make_formulas(jg_price=jg_price)
     best, best_z, best_mt = _search(BASE_INCOME, f)
-    fkeys = list(f)
     assert best.status == "optimal"
     assert best_z == expected_z
     assert np.allclose(best_mt, expected_mt)
-    assert np.isclose(best.formula_rates[fkeys.index("jg")], expected_jg)
+    assert np.allclose(best.formula_rates, expected_rates)
+    assert np.allclose(best.resource_slack, expected_slack)
     assert np.isclose(best.dollar_output, expected_dollar)
 
 
@@ -152,26 +176,56 @@ def test_jade_gourd_price_breakpoints(
 #
 # bc breakpoint for jg_bc=13 (> 38/3): ≈5.04 (z=7 jg=1 → z=6 jg=2)
 # Below: z=7, mt=ori; above: z=6, mt=ferrium.
+#
+# bc=1, jg_bc=13 (z=7):  sc=53/24, hx_make=1, ya=11/10, yc=71/480,
+#                         hetonite_make=1/5, xg=2/9, jg=1
+# bc=6, jg_bc=13 (z=6):  hx_make=2, ya=7/10, hetonite_make=2/5,
+#                         hc=103/120, xg=2/15, jg=2  (fer MT; ori slack=651/2)
+# bc_only, jg_bc=12 (z=8): xg=8/3; all non-xi resources fully slack
+# bc_only, jg_bc=13 (z=6): hx_make=2, hetonite_make∈[2/5,3/4] (degenerate),
+#                           xg=2/15, jg=2  (cert output=164)
 # ---------------------------------------------------------------------------
 
 _BP1 = 904 / 15
 
 
 @pytest.mark.parametrize(
-    "bc,jg_bc,bc_only,expected_z,expected_mt,expected_jg,expected_xg,expected_dollar",
+    "bc,jg_bc,bc_only,expected_z,expected_mt,expected_rates,expected_slack,expected_dollar",
     [
         # jg_bc=13 > 38/3, bc=1: effective price 1099/15 between bp1 and bp2 → z=7 jg=1
-        (1, 13, False, 7, [0, 50, 0, 0, 0, 0], 1, 2 / 9,  8287 / 6),
+        (
+            1, 13, False, 7, [0, 50, 0, 0, 0, 0],
+            [53/24, 0, 1, 0, 11/10, 71/480, 0, 0, 1/5, 0, 0, 2/9, 1],
+            [0, 0, 0, 0, 0, 0],
+            8287/6,
+        ),
         # jg_bc=13, bc=6 > ~5.04 threshold → z=6 jg=2 (ferrium metatransfer)
-        (6, 13, False, 6, [0, 0, 25, 0, 0, 0], 2, 2 / 15, 616703 / 320),
+        (
+            6, 13, False, 6, [0, 0, 25, 0, 0, 0],
+            [0, 0, 2, 0, 7/10, 0, 0, 0, 2/5, 0, 103/120, 2/15, 2],
+            [0, 651/2, 0, 0, 0, 0],
+            616703/320,
+        ),
         # bc_only, jg_bc=12 < 38/3: xg (z=8) wins; cert output = 8/3*10*6 = 160
-        (0, 12, True,  8, [0, 50, 0, 0, 0, 0], 0, 8 / 3,  160),
+        (
+            0, 12, True, 8, [0, 50, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8/3, 0],
+            [0, 530, 90, 180, 0, 0],
+            160,
+        ),
         # bc_only, jg_bc=13 > 38/3: jg (z=6) wins; cert output = 2/15*60 + 2*13*6 = 164
-        (0, 13, True,  6, [0, 50, 0, 0, 0, 0], 2, 2 / 15, 164),
+        # hetonite_make is degenerate: cuprium limits it to ≤3/4 but LP only needs ≥2/5.
+        # expected_rates/slack are None; non-degenerate entries asserted separately below.
+        (
+            0, 13, True, 6, [0, 50, 0, 0, 0, 0],
+            None,
+            None,
+            164,
+        ),
     ],
 )
 def test_jade_gourd_bc_worth(
-    bc, jg_bc, bc_only, expected_z, expected_mt, expected_jg, expected_xg, expected_dollar
+    bc, jg_bc, bc_only, expected_z, expected_mt, expected_rates, expected_slack, expected_dollar
 ):
     f = _make_formulas(jg_price=_BP1, bc=bc, jg_bc=jg_bc, bc_only=bc_only)
     best, best_z, best_mt = _search(BASE_INCOME, f)
@@ -179,6 +233,13 @@ def test_jade_gourd_bc_worth(
     assert best.status == "optimal"
     assert best_z == expected_z
     assert np.allclose(best_mt, expected_mt)
-    assert np.isclose(best.formula_rates[fkeys.index("jg")], expected_jg)
-    assert np.isclose(best.formula_rates[fkeys.index("xg")], expected_xg)
+    if expected_rates is not None:
+        assert np.allclose(best.formula_rates, expected_rates)
+    else:
+        assert np.isclose(best.formula_rates[fkeys.index("jg")], 2)
+        assert np.isclose(best.formula_rates[fkeys.index("xg")], 2 / 15)
+        hm = best.formula_rates[fkeys.index("hetonite_make")]
+        assert 2/5 <= hm <= 3/4 + 1e-9
+    if expected_slack is not None:
+        assert np.allclose(best.resource_slack, expected_slack)
     assert np.isclose(best.dollar_output, expected_dollar)
