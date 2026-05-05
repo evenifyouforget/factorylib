@@ -302,23 +302,37 @@ def test_jade_gourd_bc_worth(
 # ---------------------------------------------------------------------------
 # Task 2: Alternate solutions from 120$ + 30bc baseline (bc=1)
 #
-# Baseline (bc=1): jg_price=120, jg_bc=30 → z=6, ferrium MT, jg=2 (1319703/640 $/min)
-# Investigations:
-#   no_hetonite   – disable hetonite pipeline (hetonite_make+hp_sell=0)
-#                   → jg impossible; falls back to z=8 no-jg optimum (8275/6)
-#   jg_limit_1    – cap jg=1 run/min (= 6 jg/min); z=7, 55247/30 $/min
-#   floor_fracs   – floor fractional baseline rates: sc→0, ya→0, hetonite_make→0, hc→0
-#                   → jg impossible; lc/yc/cp_sell/xg regime (3616/3)
-#   bc_low        – bc=0: cert component zeroed; same structure, lower $ (1089303/640)
-#   bc_high       – bc=5: cert component amplified; same structure (2241303/640)
-#   bc_cap_33     – jg.limit=11/20 run/min (= 3.3 jg/min; leisurely shop saturation)
-#                   Each jg run = 6 items × 30 bc = 180 bc/run.
-#                   Baseline jg=2 → 360 bc/min → exhausts 1817000-cert shop in 3.5 days.
-#                   Binding: z=7, messier rates than jg_limit_1 (238273/150 $/min)
-#   bc_cap_6      – jg.limit=1 run/min (= 6 jg/min); equals jg_limit_1 exactly
-#   bc_only       – bc→∞; same as bc_worth jg_bc=30 case; cert output=368
+# Baseline: z=6, ferrium MT, jg=2 (1319703/640 $/min)
+# Fractional baseline rates: sc=1/4, ya=7/10, hetonite_make=2/5, hc=191/240.
+# All floor to 0.
 #
-# Note: no_hxmake requires a custom loop (see test_jade_gourd_120bc_no_hxmake below).
+# Remove pipeline formulas (jg blocked entirely):
+#   no_hetonite   – hetonite_make=hp_sell=0 → z=8 no-jg fallback (8275/6)
+#
+# Floor each fractional rate individually:
+#   no_sc         – sc=0 → lc compensates partly (655359/320)
+#   no_ya         – ya=0 → hetonite+hp_sell take up cup, but need extra ferr
+#                   → hc shrinks; net loss 861/640 vs baseline (659421/320)
+#   no_hc         – hc=0 → yc=191/240 absorbs freed ferr; same fraction! (10249/5)
+#
+# Combined floors:
+#   floor_ya_hc   – ya=0 AND hc=0; same $ as no_hc (10249/5)
+#                   When hc is absent, ya↔hetonite+hp_sell is exact: both use
+#                   ferr+cup at same $/resource. With hc present, ferr is fully
+#                   used → ya-to-hetonite swap requires shrinking hc → small loss.
+#   floor_fracs   – sc=ya=hetonite_make=hc=0; jg blocked; lc/yc/cp_sell/xg (3616/3)
+#
+# Limit jg multiples:
+#   jg_limit_1    – jg=1 run/min (6 jg/min); z=7, 55247/30
+#   bc_cap_33     – jg=11/20 (3.3 jg/min, direct cap): binding, z=7 (238273/150)
+#   bc_cap_6      – jg=1 (6 jg/min) = jg_limit_1 exactly
+#
+# bc sensitivity (same structure across all; only $ changes):
+#   bc_low        – bc=0: cert value zeroed (1089303/640)
+#   bc_high       – bc=5: amplified (2241303/640)
+#   bc_only       – bc→∞; cert output=368
+#
+# Note: no_hxmake (custom loop) and bc-model shop saturation in separate tests.
 # ---------------------------------------------------------------------------
 
 _BASELINE_RATES = [1 / 4, 0, 2, 0, 7 / 10, 0, 0, 0, 2 / 5, 0, 191 / 240, 0, 2]
@@ -353,6 +367,64 @@ _NO_JG_DOLLAR = 8275 / 6
             _NO_JG_RATES,
             [0] * 6,
             _NO_JG_DOLLAR,
+        ),
+        # Floor each fractional baseline rate individually (all floor to 0).
+        # sc=1/4, ya=7/10, hetonite_make=2/5, hc=191/240 all have floor=0.
+        # no_sc: lc=2/5 picks up ori; hc→103/120 (more ferr freed from sc)
+        (
+            "no_sc",
+            1,
+            30,
+            False,
+            {"sc": 0},
+            6,
+            [0, 0, 25, 0, 0, 0],
+            [0, 2 / 5, 2, 0, 7 / 10, 0, 0, 0, 2 / 5, 0, 103 / 120, 0, 2],
+            [0, 507 / 2, 0, 0, 0, 0],
+            655359 / 320,
+        ),
+        # no_ya: hetonite+hp_sell absorbs freed cup; BUT extra hetonite needs ferr
+        # → hc shrinks by 7/80; net loss = 861/640 (ya is NOT equivalent to
+        # hetonite here because ferr is fully used by hc)
+        (
+            "no_ya",
+            1,
+            30,
+            False,
+            {"ya": 0},
+            6,
+            [0, 0, 25, 0, 0, 0],
+            [1 / 4, 0, 2, 0, 0, 0, 0, 0, 3 / 4, 7 / 20, 17 / 24, 0, 2],
+            [0, 585 / 2, 0, 0, 0, 0],
+            659421 / 320,
+        ),
+        # no_hc: freed ferr+ori → yc=191/240 (same fraction, just moved); same jg
+        (
+            "no_hc",
+            1,
+            30,
+            False,
+            {"hc": 0},
+            6,
+            [0, 0, 25, 0, 0, 0],
+            [1 / 4, 0, 2, 0, 7 / 10, 191 / 240, 0, 0, 2 / 5, 0, 0, 0, 2],
+            [0, 420, 0, 0, 0, 0],
+            10249 / 5,
+        ),
+        # floor_ya_hc: floor ya AND hc simultaneously.
+        # Without hc, ferr is free → ya↔hetonite+hp_sell holds exactly.
+        # Same $ as no_hc: yc=17/24 absorbs same ferr that hc did.
+        (
+            "floor_ya_hc",
+            1,
+            30,
+            False,
+            {"ya": 0, "hc": 0},
+            6,
+            [0, 0, 25, 0, 0, 0],
+            [1 / 4, 0, 2, 0, 0, 17 / 24, 0, 0, 3 / 4, 7 / 20, 0, 0, 2],
+            [0, 420, 0, 0, 0, 0],
+            10249 / 5,
         ),
         (
             "jg_limit_1",
@@ -517,3 +589,93 @@ def test_jade_gourd_120bc_no_hxmake():
     assert np.allclose(best.formula_rates, _NO_JG_RATES)
     assert np.allclose(best.resource_slack, [0] * 6)
     assert np.isclose(best.dollar_output, _NO_JG_DOLLAR)
+
+
+# ---------------------------------------------------------------------------
+# BC intermediate resource model.
+#
+# Resources: [xi, ori, ferr, cup, heavy_xi, hetonite, bc_certs]
+# bc_certs is an intermediate (supply=0):
+#   jg produces 180 bc/run (6 items × 30 bc/item)
+#   xg produces  60 bc/run (6 items × 10 bc/item)
+#   bc_sell: consumes 1 bc → bc_sell_output $, capped at bc_sell_limit bc/min
+#
+# Separating cert production from cert valuation lets the LP choose how much
+# of the bc budget to sell (vs waste) rather than capping jg/xg directly.
+#
+# Shop saturation: 1817000 bc / (13×24×60 min) ≈ 97 bc/min
+# Baseline jg=2 → 360 bc/min >> 97 → shop exhausted in ~3.5 days.
+#
+# Key finding: with shop saturation cap, optimal PRODUCTION structure is unchanged
+# (jg=2 still best for direct $). Only bc revenue is reduced.
+# Compare to bc_cap_33 (direct jg cap): forces z=7, very different structure.
+# ---------------------------------------------------------------------------
+
+_BASE7 = np.append(BASE_INCOME, 0.0)
+_XI7 = np.append(XI_PER_FORGE, 0.0)
+_MTS7 = [mt + [0.0] for mt in METATRANSFERS]
+_SHOP_BC_PER_MIN = 1817000 / (13 * 24 * 60)  # ≈ 97.06 bc/min
+
+
+def _make_formulas_bc(jg_price=0, bc_sell_output=1, bc_sell_limit=np.inf):
+    """Build 7-resource formula dict with bc_certs as intermediate (index 6).
+
+    jg and xg produce bc as a byproduct; bc_sell converts bc → $ up to limit.
+    """
+    xi_sc = 60 * (4 / 5)
+    xi_hx = 60 + 30 * (4 / 5)
+    f = {
+        "sc": _f([xi_sc, 240, 30, 0, 0, 0, 0], 54 * 6),
+        "lc": _f([30, 180, 0, 0, 0, 0, 0], 25 * 6),
+        "hx_make": _f([xi_hx, 0, 0, 0, -6, 0, 0], 0),
+        "hx_sell": _f([0, 0, 0, 0, 6, 0, 0], 27 * 6),
+        "ya": _f([0, 0, 0, 120, 0, 0, 0], 22 * 6),
+        "yc": _f([0, 0, 120, 0, 0, 0, 0], 16 * 6),
+        "xi_sell": _f([1, 0, 0, 0, 0, 0, 0], 1),
+        "cp_sell": _f([0, 0, 0, 1, 0, 0, 0], 1),
+        "hetonite_make": _f([0, 0, 30, 240, 0, -30, 0], 0),
+        "hp_sell": _f([0, 0, 0, 0, 0, 30, 0], 48 * 6),
+        "hc": _f([0, 180, 120, 0, 0, 0, 0], 54 * 6 * 1100 / 3200),
+        "xg": _f([90, 0, 0, 0, 0, 0, -60], 40 * 6),
+        "jg": _f([0, 0, 0, 0, 6, 6, -180], jg_price * 6),
+        "bc_sell": _f([0, 0, 0, 0, 0, 0, 1], bc_sell_output, bc_sell_limit),
+    }
+    return f
+
+
+def _search_bc(formulas, max_forges=8):
+    candidates = []
+    for z in range(max_forges + 1):
+        formulas["hx_make"].limit = max_forges - z
+        for mt in _MTS7:
+            income = _BASE7 + z * _XI7 + np.array(mt, dtype=float)
+            result = maximize_dollar(income, list(formulas.values()))
+            candidates.append((result, z, list(mt[:6])))
+    return max(candidates, key=lambda r: r[0].dollar_output)
+
+
+@pytest.mark.parametrize(
+    "bc_sell_limit,exp_bc_sell,exp_bc_slack,exp_dollar",
+    [
+        # uncapped: bc_sell sells all 360 bc/min; dollar = baseline
+        (np.inf, 360, 0, 1319703 / 640),
+        # shop saturation: only ~97 bc/min sold; 263/min wasted; jg=2 unchanged
+        (_SHOP_BC_PER_MIN, _SHOP_BC_PER_MIN, 360 - _SHOP_BC_PER_MIN, 134716451 / 74880),
+    ],
+    ids=["uncapped", "shop_saturation"],
+)
+def test_jade_gourd_120bc_shop_saturation(
+    bc_sell_limit, exp_bc_sell, exp_bc_slack, exp_dollar
+):
+    f = _make_formulas_bc(jg_price=120, bc_sell_output=1, bc_sell_limit=bc_sell_limit)
+    best, best_z, best_mt = _search_bc(f)
+    fkeys = list(f)
+    assert best.status == "optimal"
+    assert best_z == 6
+    assert np.allclose(best_mt, [0, 0, 25, 0, 0, 0])
+    # Production structure: indices 0-12 same as baseline (jg=2 optimal regardless)
+    assert np.allclose(best.formula_rates[:13], _BASELINE_RATES)
+    assert np.isclose(best.formula_rates[fkeys.index("bc_sell")], exp_bc_sell)
+    assert np.allclose(best.resource_slack[:6], _BASELINE_SLACK)
+    assert np.isclose(best.resource_slack[6], exp_bc_slack)
+    assert np.isclose(best.dollar_output, exp_dollar)
