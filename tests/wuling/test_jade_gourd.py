@@ -531,6 +531,23 @@ _NO_JG_DOLLAR = 8275 / 6
             None,
             368,
         ),
+        # wuling_10pm: 10 jg/min = 5/3 runs/min, bc=0, no_hc, no_xg.
+        # Cleanest solution in (6,12)/min range: all denominators ≤ 6.
+        # z=6 ferr MT beats z=7 jg=1 by +29 $/min (crossover is between 8 and 9/min).
+        # xi: 48*(5/6)+84*(5/3)=180; cup: 120*(5/6)+240*(1/3)=180;
+        # ferr: 30*(5/6)+120*(2/3)+30*(1/3)=115. All binding.
+        (
+            "wuling_10pm",
+            0,
+            30,
+            False,
+            {"hc": 0, "xg": 0, "jg": 5 / 3},
+            6,
+            [0, 0, 25, 0, 0, 0],
+            [5 / 6, 0, 5 / 3, 0, 5 / 6, 2 / 3, 0, 0, 1 / 3, 0, 0, 0, 5 / 3],
+            [0, 280, 0, 0, 0, 0],
+            1644,
+        ),
     ],
     ids=lambda x: x if isinstance(x, str) else None,
 )
