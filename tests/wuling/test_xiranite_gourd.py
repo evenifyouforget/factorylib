@@ -11,6 +11,7 @@ Structural breakpoints:
   bc = 303/64    — HC Battery switches on; yc drops to 0; SC partial
   bc = 5381/1024 — SC drops to 0; OriOre freed (slack = 615/2)
 """
+
 import numpy as np
 import pytest
 

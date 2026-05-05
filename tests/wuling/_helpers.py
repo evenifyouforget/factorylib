@@ -1,4 +1,5 @@
 """Shared helpers for Wuling 1.2 scenario tests."""
+
 import numpy as np
 
 from factorylib.optimize import Formula, maximize_dollar

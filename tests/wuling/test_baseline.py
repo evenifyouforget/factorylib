@@ -4,6 +4,7 @@
 Base supply: 0 Xiranite (+30*Z), 480 Originium Ore, 90 Ferrium Ore, 180 Cuprium Ore.
 Metatransfer choice: 25 DOP (= 50 Originium Ore) or 25 Ferrium Ore.
 """
+
 import numpy as np
 import pytest
 

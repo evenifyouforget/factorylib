@@ -19,6 +19,7 @@ bc→∞ breakpoint:
   bc_inf_jg_bc = 38/3  -- jg_bc where xg and jg are equally profitable
     (derived from Δxi between z=8 and z=7: 114 xi, vs jg yield 6 per forge)
 """
+
 import numpy as np
 import pytest
 
@@ -50,19 +51,19 @@ def _make_formulas(
     """
     xi_sc = 60 * (4 / 5 if purification else 1)
     xi_hx = 60 + 30 * (4 / 5 if purification else 1)
-    ds = 0.0 if bc_only else 1.0      # dollar scale
-    bc_eff = 1 if bc_only else bc     # cert value (1 cert = 1 unit in bc_only)
+    ds = 0.0 if bc_only else 1.0  # dollar scale
+    bc_eff = 1 if bc_only else bc  # cert value (1 cert = 1 unit in bc_only)
     f = {
-        "sc":            _f([xi_sc, 240, 30, 0, 0, 0], ds * 54 * 6),
-        "lc":            _f([30, 180, 0, 0, 0, 0],     ds * 25 * 6),
-        "hx_make":       _f([xi_hx, 0, 0, 0, -6, 0],   0),
-        "hx_sell":       _f([0, 0, 0, 0, 6, 0],        ds * 27 * 6),
-        "ya":            _f([0, 0, 0, 120, 0, 0],       ds * 22 * 6),
-        "yc":            _f([0, 0, 120, 0, 0, 0],       ds * 16 * 6),
-        "xi_sell":       _f([1, 0, 0, 0, 0, 0],         ds),
-        "cp_sell":       _f([0, 0, 0, 1, 0, 0],         ds),
-        "hetonite_make": _f([0, 0, 30, 240, 0, -30],    0),
-        "hp_sell":       _f([0, 0, 0, 0, 0, 30],        ds * 48 * 6),
+        "sc": _f([xi_sc, 240, 30, 0, 0, 0], ds * 54 * 6),
+        "lc": _f([30, 180, 0, 0, 0, 0], ds * 25 * 6),
+        "hx_make": _f([xi_hx, 0, 0, 0, -6, 0], 0),
+        "hx_sell": _f([0, 0, 0, 0, 6, 0], ds * 27 * 6),
+        "ya": _f([0, 0, 0, 120, 0, 0], ds * 22 * 6),
+        "yc": _f([0, 0, 120, 0, 0, 0], ds * 16 * 6),
+        "xi_sell": _f([1, 0, 0, 0, 0, 0], ds),
+        "cp_sell": _f([0, 0, 0, 1, 0, 0], ds),
+        "hetonite_make": _f([0, 0, 30, 240, 0, -30], 0),
+        "hp_sell": _f([0, 0, 0, 0, 0, 30], ds * 48 * 6),
     }
     if include_hc:
         f["hc"] = _f([0, 180, 120, 0, 0, 0], ds * 54 * 6 * 1100 / 3200)
@@ -121,28 +122,45 @@ def test_wuling_new_model_equiv():
     "jg_price,expected_z,expected_mt,expected_rates,expected_slack,expected_dollar",
     [
         (
-            60, 8, [0, 50, 0, 0, 0, 0],
-            [53/24, 0, 0, 0, 3/2, 19/96, 0, 0, 0, 0, 0, 67/45, 0],
+            60,
+            8,
+            [0, 50, 0, 0, 0, 0],
+            [53 / 24, 0, 0, 0, 3 / 2, 19 / 96, 0, 0, 0, 0, 0, 67 / 45, 0],
             [0, 0, 0, 0, 0, 0],
-            7739/6,
+            7739 / 6,
         ),
         (
-            61, 7, [0, 50, 0, 0, 0, 0],
-            [53/24, 0, 1, 0, 11/10, 71/480, 0, 0, 1/5, 0, 0, 2/9, 1],
+            61,
+            7,
+            [0, 50, 0, 0, 0, 0],
+            [53 / 24, 0, 1, 0, 11 / 10, 71 / 480, 0, 0, 1 / 5, 0, 0, 2 / 9, 1],
             [0, 0, 0, 0, 0, 0],
-            38827/30,
+            38827 / 30,
         ),
         (
-            111, 7, [0, 50, 0, 0, 0, 0],
-            [53/24, 0, 1, 0, 11/10, 71/480, 0, 0, 1/5, 0, 0, 2/9, 1],
+            111,
+            7,
+            [0, 50, 0, 0, 0, 0],
+            [53 / 24, 0, 1, 0, 11 / 10, 71 / 480, 0, 0, 1 / 5, 0, 0, 2 / 9, 1],
             [0, 0, 0, 0, 0, 0],
-            47827/30,
+            47827 / 30,
         ),
         (
-            112, 6, [0, 0, 25, 0, 0, 0],
-            [1/4, 0, 2, 0, 7/10, 0, 0, 0, 2/5, 0, 191/240, 0, 2],
-            [0, 1107/4, 0, 0, 0, 0],
-            1027863/640,
+            112,
+            6,
+            [0, 0, 25, 0, 0, 0],
+            [1 / 4, 0, 2, 0, 7 / 10, 0, 0, 0, 2 / 5, 0, 191 / 240, 0, 2],
+            [0, 1107 / 4, 0, 0, 0, 0],
+            1027863 / 640,
+        ),
+        # 120 = actual in-game price; above bp2 → same structure as 112
+        (
+            120,
+            6,
+            [0, 0, 25, 0, 0, 0],
+            [1 / 4, 0, 2, 0, 7 / 10, 0, 0, 0, 2 / 5, 0, 191 / 240, 0, 2],
+            [0, 1107 / 4, 0, 0, 0, 0],
+            1089303 / 640,
         ),
     ],
 )
@@ -194,22 +212,34 @@ _BP1 = 904 / 15
     [
         # jg_bc=13 > 38/3, bc=1: effective price 1099/15 between bp1 and bp2 → z=7 jg=1
         (
-            1, 13, False, 7, [0, 50, 0, 0, 0, 0],
-            [53/24, 0, 1, 0, 11/10, 71/480, 0, 0, 1/5, 0, 0, 2/9, 1],
+            1,
+            13,
+            False,
+            7,
+            [0, 50, 0, 0, 0, 0],
+            [53 / 24, 0, 1, 0, 11 / 10, 71 / 480, 0, 0, 1 / 5, 0, 0, 2 / 9, 1],
             [0, 0, 0, 0, 0, 0],
-            8287/6,
+            8287 / 6,
         ),
         # jg_bc=13, bc=6 > ~5.04 threshold → z=6 jg=2 (ferrium metatransfer)
         (
-            6, 13, False, 6, [0, 0, 25, 0, 0, 0],
-            [0, 0, 2, 0, 7/10, 0, 0, 0, 2/5, 0, 103/120, 2/15, 2],
-            [0, 651/2, 0, 0, 0, 0],
-            616703/320,
+            6,
+            13,
+            False,
+            6,
+            [0, 0, 25, 0, 0, 0],
+            [0, 0, 2, 0, 7 / 10, 0, 0, 0, 2 / 5, 0, 103 / 120, 2 / 15, 2],
+            [0, 651 / 2, 0, 0, 0, 0],
+            616703 / 320,
         ),
         # bc_only, jg_bc=12 < 38/3: xg (z=8) wins; cert output = 8/3*10*6 = 160
         (
-            0, 12, True, 8, [0, 50, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8/3, 0],
+            0,
+            12,
+            True,
+            8,
+            [0, 50, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8 / 3, 0],
             [0, 530, 90, 180, 0, 0],
             160,
         ),
@@ -217,15 +247,39 @@ _BP1 = 904 / 15
         # hetonite_make is degenerate: cuprium limits it to ≤3/4 but LP only needs ≥2/5.
         # expected_rates/slack are None; non-degenerate entries asserted separately below.
         (
-            0, 13, True, 6, [0, 50, 0, 0, 0, 0],
+            0,
+            13,
+            True,
+            6,
+            [0, 50, 0, 0, 0, 0],
             None,
             None,
             164,
         ),
+        # bc_only, jg_bc=30 (actual in-game bc yield): 30 >> 38/3 → jg (z=6) wins
+        # cert output = 2/15*60 + 2*30*6 = 8 + 360 = 368
+        # hetonite_make degenerate (2/5 ≤ hm ≤ 3/4); rates/slack None
+        (
+            0,
+            30,
+            True,
+            6,
+            [0, 50, 0, 0, 0, 0],
+            None,
+            None,
+            368,
+        ),
     ],
 )
 def test_jade_gourd_bc_worth(
-    bc, jg_bc, bc_only, expected_z, expected_mt, expected_rates, expected_slack, expected_dollar
+    bc,
+    jg_bc,
+    bc_only,
+    expected_z,
+    expected_mt,
+    expected_rates,
+    expected_slack,
+    expected_dollar,
 ):
     f = _make_formulas(jg_price=_BP1, bc=bc, jg_bc=jg_bc, bc_only=bc_only)
     best, best_z, best_mt = _search(BASE_INCOME, f)
@@ -239,7 +293,227 @@ def test_jade_gourd_bc_worth(
         assert np.isclose(best.formula_rates[fkeys.index("jg")], 2)
         assert np.isclose(best.formula_rates[fkeys.index("xg")], 2 / 15)
         hm = best.formula_rates[fkeys.index("hetonite_make")]
-        assert 2/5 <= hm <= 3/4 + 1e-9
+        assert 2 / 5 <= hm <= 3 / 4 + 1e-9
     if expected_slack is not None:
         assert np.allclose(best.resource_slack, expected_slack)
     assert np.isclose(best.dollar_output, expected_dollar)
+
+
+# ---------------------------------------------------------------------------
+# Task 2: Alternate solutions from 120$ + 30bc baseline (bc=1)
+#
+# Baseline (bc=1): jg_price=120, jg_bc=30 → z=6, ferrium MT, jg=2 (1319703/640 $/min)
+# Investigations:
+#   no_hetonite   – disable hetonite pipeline (hetonite_make+hp_sell=0)
+#                   → jg impossible; falls back to z=8 no-jg optimum (8275/6)
+#   jg_limit_1    – cap jg=1 run/min (= 6 jg/min); z=7, 55247/30 $/min
+#   floor_fracs   – floor all fractional baseline rates: sc→0, ya→0, hetonite_make→0, hc→0
+#                   → jg impossible; lc/yc/cp_sell/xg regime (3616/3)
+#   bc_low        – bc=0: cert component zeroed; same structure, lower $ (1089303/640)
+#   bc_high       – bc=5: cert component amplified; same structure, higher $ (2241303/640)
+#   bc_cap_33     – jg.limit=11/20 run/min (= 3.3 jg/min; leisurely shop saturation)
+#                   Each jg run = 6 items × 30 bc = 180 bc/run.
+#                   Baseline jg=2 → 360 bc/min → exhausts 1817000-cert shop in 3.5 days.
+#                   Binding: z=7, messier rates than jg_limit_1 (238273/150 $/min)
+#   bc_cap_6      – jg.limit=1 run/min (= 6 jg/min); equals jg_limit_1 exactly
+#   bc_only       – bc→∞; same as bc_worth jg_bc=30 case; cert output=368
+#
+# Note: no_hxmake requires a custom loop (see test_jade_gourd_120bc_no_hxmake below).
+# ---------------------------------------------------------------------------
+
+_BASELINE_RATES = [1 / 4, 0, 2, 0, 7 / 10, 0, 0, 0, 2 / 5, 0, 191 / 240, 0, 2]
+_BASELINE_SLACK = [0, 1107 / 4, 0, 0, 0, 0]
+_NO_JG_RATES = [53 / 24, 0, 0, 0, 3 / 2, 19 / 96, 0, 0, 0, 0, 0, 67 / 45, 0]
+_NO_JG_DOLLAR = 8275 / 6
+
+
+@pytest.mark.parametrize(
+    "scenario,bc,jg_bc,bc_only,mods,expected_z,expected_mt,expected_rates,expected_slack,expected_dollar",
+    [
+        (
+            "baseline",
+            1,
+            30,
+            False,
+            {},
+            6,
+            [0, 0, 25, 0, 0, 0],
+            _BASELINE_RATES,
+            _BASELINE_SLACK,
+            1319703 / 640,
+        ),
+        (
+            "no_hetonite",
+            1,
+            30,
+            False,
+            {"hetonite_make": 0, "hp_sell": 0},
+            8,
+            [0, 50, 0, 0, 0, 0],
+            _NO_JG_RATES,
+            [0] * 6,
+            _NO_JG_DOLLAR,
+        ),
+        (
+            "jg_limit_1",
+            1,
+            30,
+            False,
+            {"jg": 1},
+            7,
+            [0, 50, 0, 0, 0, 0],
+            [53 / 24, 0, 1, 0, 11 / 10, 71 / 480, 0, 0, 1 / 5, 0, 0, 2 / 9, 1],
+            [0] * 6,
+            55247 / 30,
+        ),
+        # floor all fractional baseline rates → sc=0, ya=0, hetonite_make=0, hc=0
+        # jg blocked (no hetonite); lc+yc+cp_sell+xg regime takes over
+        (
+            "floor_fracs",
+            1,
+            30,
+            False,
+            {"sc": 0, "ya": 0, "hetonite_make": 0, "hc": 0},
+            8,
+            [0, 0, 25, 0, 0, 0],
+            [0, 8 / 3, 0, 0, 0, 23 / 24, 0, 180, 0, 0, 0, 16 / 9, 0],
+            [0] * 6,
+            3616 / 3,
+        ),
+        # bc=0: jg_bc*bc=0, cert component vanishes; same structure as jg_price=120 bc=0
+        (
+            "bc_low",
+            0,
+            30,
+            False,
+            {},
+            6,
+            [0, 0, 25, 0, 0, 0],
+            _BASELINE_RATES,
+            _BASELINE_SLACK,
+            1089303 / 640,
+        ),
+        (
+            "bc_high",
+            5,
+            30,
+            False,
+            {},
+            6,
+            [0, 0, 25, 0, 0, 0],
+            _BASELINE_RATES,
+            _BASELINE_SLACK,
+            2241303 / 640,
+        ),
+        # bc_cap_33: 3.3 jg/min = 11/20 run/min (each run = 6 items × 30 bc = 180 bc/run)
+        # binding: baseline jg=2 runs/min exhausts shop in 3.5 days, not 13
+        (
+            "bc_cap_33",
+            1,
+            30,
+            False,
+            {"jg": 11 / 20},
+            7,
+            [0, 50, 0, 0, 0, 0],
+            [
+                53 / 24,
+                0,
+                11 / 20,
+                0,
+                32 / 25,
+                409 / 2400,
+                0,
+                0,
+                11 / 100,
+                0,
+                0,
+                289 / 450,
+                11 / 20,
+            ],
+            [0] * 6,
+            238273 / 150,
+        ),
+        # bc_cap_6: 6 jg/min = 1 run/min; equals jg_limit_1 exactly (same limit, same result)
+        (
+            "bc_cap_6",
+            1,
+            30,
+            False,
+            {"jg": 1},
+            7,
+            [0, 50, 0, 0, 0, 0],
+            [53 / 24, 0, 1, 0, 11 / 10, 71 / 480, 0, 0, 1 / 5, 0, 0, 2 / 9, 1],
+            [0] * 6,
+            55247 / 30,
+        ),
+        # bc_only: same as bc_worth jg_bc=30; degenerate hetonite_make; cert output=368
+        (
+            "bc_only",
+            0,
+            30,
+            True,
+            {},
+            6,
+            [0, 50, 0, 0, 0, 0],
+            None,
+            None,
+            368,
+        ),
+    ],
+    ids=lambda x: x if isinstance(x, str) else None,
+)
+def test_jade_gourd_120bc_alternates(
+    scenario,
+    bc,
+    jg_bc,
+    bc_only,
+    mods,
+    expected_z,
+    expected_mt,
+    expected_rates,
+    expected_slack,
+    expected_dollar,
+):
+    f = _make_formulas(jg_price=120, jg_bc=jg_bc, bc=bc, bc_only=bc_only)
+    for key, val in mods.items():
+        f[key].limit = val
+    best, best_z, best_mt = _search(BASE_INCOME, f)
+    fkeys = list(f)
+    assert best.status == "optimal"
+    assert best_z == expected_z
+    assert np.allclose(best_mt, expected_mt)
+    if expected_rates is not None:
+        assert np.allclose(best.formula_rates, expected_rates)
+    else:
+        assert np.isclose(best.formula_rates[fkeys.index("jg")], 2)
+        assert np.isclose(best.formula_rates[fkeys.index("xg")], 2 / 15)
+        hm = best.formula_rates[fkeys.index("hetonite_make")]
+        assert 2 / 5 <= hm <= 3 / 4 + 1e-9
+    if expected_slack is not None:
+        assert np.allclose(best.resource_slack, expected_slack)
+    assert np.isclose(best.dollar_output, expected_dollar)
+
+
+# ---------------------------------------------------------------------------
+# no_hxmake: disable heavy xiranite production entirely.
+# hx_make is always forced to 0; forges produce only extra xi (via XI_PER_FORGE).
+# jg is impossible (needs heavy_xi); falls back to z=8 no-jg optimum.
+# Requires a custom loop: _search overwrites hx_make.limit at each z.
+# ---------------------------------------------------------------------------
+
+
+def test_jade_gourd_120bc_no_hxmake():
+    f = _make_formulas(jg_price=120, jg_bc=30, bc=1)
+    candidates = []
+    for z in range(9):
+        f["hx_make"].limit = 0
+        for mt in METATRANSFERS:
+            income = BASE_INCOME + z * XI_PER_FORGE + np.array(mt, dtype=float)
+            candidates.append((maximize_dollar(income, list(f.values())), z, list(mt)))
+    best, best_z, best_mt = max(candidates, key=lambda r: r[0].dollar_output)
+    assert best.status == "optimal"
+    assert best_z == 8
+    assert np.allclose(best_mt, [0, 50, 0, 0, 0, 0])
+    assert np.allclose(best.formula_rates, _NO_JG_RATES)
+    assert np.allclose(best.resource_slack, [0] * 6)
+    assert np.isclose(best.dollar_output, _NO_JG_DOLLAR)
