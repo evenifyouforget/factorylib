@@ -245,7 +245,7 @@ _BP1 = 904 / 15
         ),
         # bc_only, jg_bc=13 > 38/3: jg (z=6) wins; cert output = 2/15*60 + 2*13*6 = 164
         # hetonite_make is degenerate: cuprium limits it to ≤3/4 but LP only needs ≥2/5.
-        # expected_rates/slack are None; non-degenerate entries asserted separately below.
+        # expected_rates/slack are None; non-degenerate entries asserted separately.
         (
             0,
             13,
@@ -307,10 +307,10 @@ def test_jade_gourd_bc_worth(
 #   no_hetonite   – disable hetonite pipeline (hetonite_make+hp_sell=0)
 #                   → jg impossible; falls back to z=8 no-jg optimum (8275/6)
 #   jg_limit_1    – cap jg=1 run/min (= 6 jg/min); z=7, 55247/30 $/min
-#   floor_fracs   – floor all fractional baseline rates: sc→0, ya→0, hetonite_make→0, hc→0
+#   floor_fracs   – floor fractional baseline rates: sc→0, ya→0, hetonite_make→0, hc→0
 #                   → jg impossible; lc/yc/cp_sell/xg regime (3616/3)
 #   bc_low        – bc=0: cert component zeroed; same structure, lower $ (1089303/640)
-#   bc_high       – bc=5: cert component amplified; same structure, higher $ (2241303/640)
+#   bc_high       – bc=5: cert component amplified; same structure (2241303/640)
 #   bc_cap_33     – jg.limit=11/20 run/min (= 3.3 jg/min; leisurely shop saturation)
 #                   Each jg run = 6 items × 30 bc = 180 bc/run.
 #                   Baseline jg=2 → 360 bc/min → exhausts 1817000-cert shop in 3.5 days.
@@ -405,7 +405,7 @@ _NO_JG_DOLLAR = 8275 / 6
             _BASELINE_SLACK,
             2241303 / 640,
         ),
-        # bc_cap_33: 3.3 jg/min = 11/20 run/min (each run = 6 items × 30 bc = 180 bc/run)
+        # bc_cap_33: 3.3 jg/min = 11/20 run/min (6 items × 30 bc = 180 bc/run)
         # binding: baseline jg=2 runs/min exhausts shop in 3.5 days, not 13
         (
             "bc_cap_33",
@@ -433,7 +433,7 @@ _NO_JG_DOLLAR = 8275 / 6
             [0] * 6,
             238273 / 150,
         ),
-        # bc_cap_6: 6 jg/min = 1 run/min; equals jg_limit_1 exactly (same limit, same result)
+        # bc_cap_6: 6 jg/min = 1 run/min; equals jg_limit_1 (same limit, same result)
         (
             "bc_cap_6",
             1,
