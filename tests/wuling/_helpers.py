@@ -1,5 +1,8 @@
 """Shared helpers for Wuling 1.2 scenario tests."""
 
+import warnings
+from fractions import Fraction
+
 import numpy as np
 
 from factorylib.optimize import Formula, maximize_dollar
@@ -27,6 +30,37 @@ def _make_wuling_formulas(purification=True):
         "yc": make_formula([0, 0, 120, 0], output=16 * 6),
         "xi": make_formula([1, 0, 0, 0], output=1),
         "cp": make_formula([0, 0, 0, 1], output=1),
+    }
+
+
+def snap_value(x: float, max_denom: int = 1000, tol: float = 1e-9) -> Fraction:
+    """Convert float to nearest simple Fraction.
+
+    Warns if no fraction with denominator <= max_denom is within tol.
+    Useful for snapshotting LP results into test expected values:
+
+        best, z, mt = _search(BASE_INCOME, formulas)
+        print(snap_value(best.dollar_output))   # e.g. Fraction(2229, 2)
+        print([snap_value(r) for r in best.formula_rates])
+    """
+    f = Fraction(x).limit_denominator(max_denom)
+    if abs(float(f) - x) > tol:
+        warnings.warn(
+            f"snap_value: {x!r} not close to any fraction with denom <= {max_denom} "
+            f"(nearest: {f}, diff: {abs(float(f) - x):.2e})"
+        )
+    return f
+
+
+def snap_result(result, max_denom: int = 1000, tol: float = 1e-9) -> dict:
+    """Snapshot an OptimizeResult as dicts of Fractions.
+
+    Returns {"dollar": Fraction, "rates": list[Fraction], "slack": list[Fraction]}.
+    """
+    return {
+        "dollar": snap_value(result.dollar_output, max_denom, tol),
+        "rates": [snap_value(r, max_denom, tol) for r in result.formula_rates],
+        "slack": [snap_value(s, max_denom, tol) for s in result.resource_slack],
     }
 
 
