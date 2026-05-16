@@ -22,11 +22,9 @@ import pytest
 from factorylib.optimize import maximize_dollar
 
 from ._helpers import (
-    METATRANSFERS,
     _make_wuling_formulas,
     _search,
     make_formula,
-    snap_result,
 )
 
 BASE_1P2D = np.array([0, 540, 90, 240], dtype=float)
@@ -185,7 +183,8 @@ def _search_5r(formulas, initial_eff=0, max_forges=MAX_FORGES_1P2D):
 @pytest.mark.parametrize(
     "initial_eff,expected_z,expected_mt,expected_rates,expected_dollar",
     [
-        # eff=0: purification must produce all needed eff from xi → equivalent to 4-resource
+        # eff=0: purification must produce all needed eff from xi
+        # → equivalent to 4-resource
         (
             0,
             10,
