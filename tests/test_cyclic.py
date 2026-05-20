@@ -21,8 +21,8 @@ def _fifth_splitter(inp):
     return s_top[1]
 
 
-_XS = [0.0, 0.1, 0.5, 0.9, 1.0]
-_AS = [0.25, 0.5, 0.75]
+_XS = [i/10 for i in range(11)]
+_AS = [1/6, 1/5, 1/4, 1/3, 1/2, 2/3, 3/4, 4/5, 5/6]
 
 
 @pytest.mark.parametrize("x", _XS)
