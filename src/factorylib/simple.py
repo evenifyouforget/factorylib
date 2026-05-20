@@ -3,7 +3,9 @@ import numpy as np
 _EPS = 1e-15
 
 
-def converger_explicit(in_flow: np.ndarray, weights: np.ndarray | None = None) -> np.ndarray:
+def converger_explicit(
+    in_flow: np.ndarray, weights: np.ndarray | None = None
+) -> np.ndarray:
     """
     Directly calculate the output flows for a converger,
     in a simplified model using continuous steady state
@@ -56,6 +58,9 @@ def converger_explicit(in_flow: np.ndarray, weights: np.ndarray | None = None) -
         sub_out = np.zeros(n - 1)
     else:
         remaining_w = remaining_w / w_sum
-        sub_out = converger_explicit(remaining_in / remaining_cap, remaining_w) * remaining_cap
+        sub_out = (
+            converger_explicit(remaining_in / remaining_cap, remaining_w)
+            * remaining_cap
+        )
 
     return np.insert(sub_out, i, a)

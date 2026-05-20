@@ -142,13 +142,15 @@ def _validate_wired(nodes: list) -> None:
         if isinstance(node, SplitterPort):
             if node.splitter.inp is None:
                 raise ValueError(
-                    "Splitter has unwired input (inp=None). Pass inp to constructor or assign it."
+                    "Splitter has unwired input (inp=None)."
+                    " Pass inp to constructor or assign it."
                 )
         elif isinstance(node, Converger):
             for i, inp in enumerate(node.inputs):
                 if inp is None:
                     raise ValueError(
-                        f"Converger has unwired input at index {i}. Call set_input() before solving."
+                        f"Converger has unwired input at index {i}."
+                        " Call set_input() before solving."
                     )
 
 
@@ -225,7 +227,9 @@ def solve(node, *, tol: float = 1e-9, max_iter: int = 1000) -> SolveResult:
             elif isinstance(n, Converger):
                 in_vecs = [flows[inp] for inp in n.inputs if inp is not None]
                 non_none_inputs = [inp for inp in n.inputs if inp is not None]
-                in_totals = np.array([float(np.sum(flows[inp])) for inp in non_none_inputs])
+                in_totals = np.array(
+                    [float(np.sum(flows[inp])) for inp in non_none_inputs]
+                )
                 w = n.weights
                 if w is None:
                     k = len(non_none_inputs)
@@ -251,7 +255,9 @@ def solve(node, *, tol: float = 1e-9, max_iter: int = 1000) -> SolveResult:
         for unit in reversed(units):
             if isinstance(unit, Converger):
                 non_none_inputs = [inp for inp in unit.inputs if inp is not None]
-                in_totals = np.array([float(np.sum(flows[inp])) for inp in non_none_inputs])
+                in_totals = np.array(
+                    [float(np.sum(flows[inp])) for inp in non_none_inputs]
+                )
                 w = unit.weights
                 if w is None:
                     k = len(non_none_inputs)
@@ -277,7 +283,8 @@ def solve(node, *, tol: float = 1e-9, max_iter: int = 1000) -> SolveResult:
                 out_caps = np.array([scalar_demand[p] for p in unit._ports])
                 if in_avail_eff > _EPS:
                     port_fracs = (
-                        converger_explicit(out_caps / in_avail_eff, unit.weights) * in_avail_eff
+                        converger_explicit(out_caps / in_avail_eff, unit.weights)
+                        * in_avail_eff
                     )
                 else:
                     port_fracs = np.zeros(unit.n)

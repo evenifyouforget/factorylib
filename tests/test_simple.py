@@ -94,7 +94,7 @@ def test_converger_explicit_weights_mismatch_raises():
 
 
 def test_converger_explicit_zero_weight():
-    # weights=[1, 0]: port 1 never gets bandwidth; remaining_w.sum()=0 hits the w_sum<_EPS path
+    # weights=[1, 0]: port 1 gets no bandwidth; hits the w_sum<_EPS path
     out = converger_explicit(np.array([0.8, 0.6]), weights=np.array([1.0, 0.0]))
     assert np.allclose(out, [0.8, 0.0])
 
