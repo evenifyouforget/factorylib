@@ -137,6 +137,21 @@ def _topo_sort(nodes: list) -> tuple[list, set[int]]:
     return order, cycle_node_ids
 
 
+def _validate_wired(nodes: list) -> None:
+    for node in nodes:
+        if isinstance(node, SplitterPort):
+            if node.splitter.inp is None:
+                raise ValueError(
+                    "Splitter has unwired input (inp=None). Pass inp to constructor or assign it."
+                )
+        elif isinstance(node, Converger):
+            for i, inp in enumerate(node.inputs):
+                if inp is None:
+                    raise ValueError(
+                        f"Converger has unwired input at index {i}. Call set_input() before solving."
+                    )
+
+
 def solve(node, *, tol: float = 1e-9, max_iter: int = 1000) -> SolveResult:
     """
     Solve steady-state flows for the network rooted at `node`.
@@ -150,6 +165,7 @@ def solve(node, *, tol: float = 1e-9, max_iter: int = 1000) -> SolveResult:
             since iteration always starts from all-zero flows).
     """
     nodes = _collect_nodes(node)
+    _validate_wired(nodes)
     topo, cycle_node_ids = _topo_sort(nodes)
 
     sources = [n for n in nodes if isinstance(n, Source)]
@@ -187,28 +203,22 @@ def solve(node, *, tol: float = 1e-9, max_iter: int = 1000) -> SolveResult:
             elif isinstance(n, SplitterPort):
                 s = n.splitter
                 if id(s) not in splitter_cache:
-                    if s.inp is None:
-                        splitter_cache[id(s)] = np.zeros(s.n)
-                    else:
-                        in_flow = flows[s.inp]
-                        in_avail = float(np.sum(in_flow))
-                        in_avail_eff = min(in_avail, s.width)
-                        out_caps = np.array([scalar_demand[p] for p in s._ports])
-                        if in_avail_eff > _EPS:
-                            splitter_cache[id(s)] = (
-                                converger_explicit(out_caps / in_avail_eff, s.weights)
-                                * in_avail_eff
-                            )
-                        else:
-                            splitter_cache[id(s)] = np.zeros(s.n)
-                port_fracs = splitter_cache[id(s)]
-                if s.inp is not None:
                     in_flow = flows[s.inp]
                     in_avail = float(np.sum(in_flow))
-                    if in_avail > _EPS:
-                        flows[n] = in_flow * (port_fracs[n.index] / in_avail)
+                    in_avail_eff = min(in_avail, s.width)
+                    out_caps = np.array([scalar_demand[p] for p in s._ports])
+                    if in_avail_eff > _EPS:
+                        splitter_cache[id(s)] = (
+                            converger_explicit(out_caps / in_avail_eff, s.weights)
+                            * in_avail_eff
+                        )
                     else:
-                        flows[n] = np.zeros(ndim)
+                        splitter_cache[id(s)] = np.zeros(s.n)
+                port_fracs = splitter_cache[id(s)]
+                in_flow = flows[s.inp]
+                in_avail = float(np.sum(in_flow))
+                if in_avail > _EPS:
+                    flows[n] = in_flow * (port_fracs[n.index] / in_avail)
                 else:
                     flows[n] = np.zeros(ndim)
 
@@ -261,8 +271,6 @@ def solve(node, *, tol: float = 1e-9, max_iter: int = 1000) -> SolveResult:
                             scalar_demand[inp] = 0.0
 
             elif isinstance(unit, Splitter):
-                if unit.inp is None:
-                    continue
                 in_flow = flows[unit.inp]
                 in_avail = float(np.sum(in_flow))
                 in_avail_eff = min(in_avail, unit.width)
