@@ -4,6 +4,67 @@ import pytest
 from factorylib.network import Converger, Source, Splitter, solve
 
 
+def test_solve_result_contains():
+    a = Source([1.0])
+    result = solve(a)
+    assert a in result
+    assert Source([0.0]) not in result
+
+
+def test_solve_result_items_keys_values():
+    a = Source([1.0])
+    result = solve(a)
+    assert list(result.keys()) == [a]
+    assert [v for v in result.values()] == [result[a]]
+    assert [(k, v) for k, v in result.items()] == [(a, result[a])]
+
+
+def test_solve_unknown_node_type_raises():
+    with pytest.raises(TypeError):
+        solve(object())
+
+
+def test_solve_splitter_none_inp_raises():
+    spl = Splitter(None, n=2)
+    with pytest.raises(ValueError, match="unwired"):
+        solve(spl[0])
+
+
+def test_solve_converger_none_input_raises():
+    src = Source([1.0])
+    cvg = Converger([src, None])
+    with pytest.raises(ValueError, match="unwired"):
+        solve(cvg)
+
+
+def test_converger_with_weights():
+    a = Source([1.0])
+    b = Source([1.0])
+    c = Converger([a, b], weights=[3, 1])
+    result = solve(c)
+    assert np.allclose(result[c], [1.0])
+    assert np.allclose(result[a], [0.75])
+    assert np.allclose(result[b], [0.25])
+
+
+def test_converger_zero_weight_blocks_input():
+    a = Source([1.0])
+    b = Source([1.0])
+    c = Converger([a, b], weights=[1.0, 0.0])
+    result = solve(c)
+    assert np.allclose(result[c], [1.0])
+    assert np.allclose(result[a], [1.0])
+    assert np.allclose(result[b], [0.0])
+
+
+def test_zero_width_converger_blocks_flow():
+    a = Source([1.0])
+    c = Converger([a], width=0.0)
+    result = solve(c)
+    assert np.allclose(result[c], [0.0])
+    assert np.allclose(result[a], [0.0])
+
+
 def test_source():
     a = Source([1, 0])
     flows = solve(a)

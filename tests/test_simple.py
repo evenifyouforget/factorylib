@@ -78,6 +78,27 @@ def test_converger_explicit_in3_2_of_3(in_vec2):
         assert np.all(isclose(converger_explicit(in_flow), expected))
 
 
+def test_converger_explicit_2d_raises():
+    with pytest.raises(ValueError, match="1D array"):
+        converger_explicit(np.array([[0.3, 0.7]]))
+
+
+def test_converger_explicit_empty_raises():
+    with pytest.raises(ValueError, match="0 inputs"):
+        converger_explicit(np.array([]))
+
+
+def test_converger_explicit_weights_mismatch_raises():
+    with pytest.raises(ValueError, match="same length"):
+        converger_explicit(np.array([0.5, 0.5]), weights=np.array([0.5]))
+
+
+def test_converger_explicit_zero_weight():
+    # weights=[1, 0]: port 1 gets no bandwidth; hits the w_sum<_EPS path
+    out = converger_explicit(np.array([0.8, 0.6]), weights=np.array([1.0, 0.0]))
+    assert np.allclose(out, [0.8, 0.0])
+
+
 def test_converger_explicit_in3_cherrypick(in_vec3):
     a, b, c = in_vec3
     if not 0 < a < min([1 / 3, b, c]):
