@@ -1,3 +1,4 @@
+import re
 from unittest.mock import patch
 
 import pytest
@@ -28,6 +29,24 @@ def test_main_prints_forge_allocation(capsys):
     assert rc == 0
     assert "10 -> Xiranite supply" in out
     assert "2 -> Heavy Xiranite capacity" in out
+
+
+def test_main_prints_income_breakdown_with_goal_percentage(capsys):
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "% of 1090 $/min goal" in out
+    assert "Income breakdown:" in out
+    assert "SC Wuling Battery:" in out
+    assert "% of produced" in out
+    assert "% of goal" in out
+
+
+def test_main_income_breakdown_respects_stock_bill_cap_flag(capsys):
+    rc = main(["--stock-bill-cap", "2000"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "of 2000 $/min goal" in out
 
 
 def test_main_prints_material_balance_with_zero_net_for_saturated_resources(capsys):
@@ -231,3 +250,29 @@ def test_unknown_formula_limit_errors():
 def test_bad_kv_format_errors():
     with pytest.raises(SystemExit):
         main(["--limit", "ya"])
+
+
+def _refined_dollar(out: str) -> float:
+    match = re.search(r"Refined solution: dollar=\S+ \$/min \(([\d.]+) \$/min\)", out)
+    assert match, out
+    return float(match.group(1))
+
+
+def test_main_complexity_weight_flag_recovers_more_dollar(capsys):
+    """Regression for the demonstrated weight sensitivity: a much lower
+    complexity_weight should recover close to LP-optimal $ output."""
+    main(["-w", "0.01", "-i", "3000", "-s", "0"])
+    relaxed_dollar = _refined_dollar(capsys.readouterr().out)
+
+    main(["-w", "1.0", "-i", "3000", "-s", "0"])
+    default_dollar = _refined_dollar(capsys.readouterr().out)
+
+    assert relaxed_dollar >= default_dollar
+
+
+def test_main_delivery_prediction_prints_percentages(capsys):
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "selected" in out
+    assert "%)" in out

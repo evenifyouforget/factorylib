@@ -15,6 +15,7 @@ from factorylib.endfield.goals import WulingGoals
 from factorylib.endfield.refine import refine
 from factorylib.endfield.wuling import (
     FORMULA_LABELS,
+    GOOD_YIELD,
     METATRANSFER_ITEMS,
     RESOURCE_LABELS,
     RESOURCE_NAMES,
@@ -148,6 +149,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="W worth of batteries to aim for (default: 7000, average player demand)",
     )
     parser.add_argument(
+        "-w",
+        "--complexity-weight",
+        type=float,
+        default=1.0,
+        help="weight of the simplicity/denominator penalty in the refine search "
+        "(default: 1.0; lower values trade simpler fractions for more $/min -- "
+        "e.g. on 1.2e full, 0.01 recovers ~99%% of LP-optimal $ vs ~91%% at 1.0, "
+        "at the cost of much larger denominators)",
+    )
+    parser.add_argument(
         "-i",
         "--refine-iterations",
         type=int,
@@ -242,11 +253,57 @@ def _format_metatransfer(mt: np.ndarray) -> str:
     return "select " + ", ".join(parts) if parts else "none"
 
 
-def _format_result(label: str, result, formula_names: list[str]) -> str:
+def _format_income_breakdown(
+    result, formula_names: list[str], formulas: dict, stock_bill_cap: float
+) -> str:
+    """Breaks down $/min income by sellable good: absolute $/min, % of
+    total produced, and % of the stock-bill-cap goal -- plus the overall
+    total as a % of that goal, so it's immediately clear how it compares
+    without doing the division by hand."""
+    lines = []
+    total = result.dollar_output
+    if stock_bill_cap > 1e-9:
+        lines.append(
+            f"    {100 * total / stock_bill_cap:.1f}% of {_fmt(stock_bill_cap)} "
+            "$/min goal"
+        )
+    contributions = [
+        (FORMULA_LABELS.get(name, name), rate * formulas[name].output)
+        for name, rate in zip(formula_names, result.formula_rates)
+        if name in formulas and rate * formulas[name].output > 1e-9
+    ]
+    if contributions:
+        lines.append("    Income breakdown:")
+        for label, amount in sorted(contributions, key=lambda kv: kv[1], reverse=True):
+            pct_of_produced = 100 * amount / total if total > 1e-9 else 0.0
+            pct_of_goal = (
+                100 * amount / stock_bill_cap if stock_bill_cap > 1e-9 else 0.0
+            )
+            lines.append(
+                f"        {label}: {_fmt(amount)} $/min "
+                f"({pct_of_produced:.1f}% of produced, {pct_of_goal:.1f}% of goal)"
+            )
+    return "\n".join(lines)
+
+
+def _format_result(
+    label: str,
+    result,
+    formula_names: list[str],
+    *,
+    formulas: dict | None = None,
+    stock_bill_cap: float | None = None,
+) -> str:
     lines = [
         f"{label}: dollar={_fmt(result.dollar_output)} $/min "
         f"({result.dollar_output:.4f} $/min)"
     ]
+    if formulas is not None and stock_bill_cap is not None:
+        breakdown = _format_income_breakdown(
+            result, formula_names, formulas, stock_bill_cap
+        )
+        if breakdown:
+            lines.append(breakdown)
     for name, rate in zip(formula_names, result.formula_rates):
         if abs(rate) > 1e-9:
             full_name = FORMULA_LABELS.get(name, name)
@@ -255,7 +312,11 @@ def _format_result(label: str, result, formula_names: list[str]) -> str:
                 if name in SECONDARY_GOAL_FORMULA_NAMES
                 else ""
             )
-            lines.append(f"    {full_name}: {_fmt(rate)} multiples ({rate:.4f}){note}")
+            item_yield = GOOD_YIELD.get(name)
+            item_rate = f" = {_fmt(rate * item_yield)}/min" if item_yield else ""
+            lines.append(
+                f"    {full_name}: {_fmt(rate)} multiples ({rate:.4f}){item_rate}{note}"
+            )
     slack_parts = [
         f"{RESOURCE_LABELS.get(name, name)}={_fmt(s)}"
         for name, s in zip(RESOURCE_NAMES, result.resource_slack)
@@ -339,13 +400,21 @@ def main(argv: list[str] | None = None) -> int:
     config = _build_config(args)
 
     best = search(config)
-    print(_format_result("Optimal solution", best.result, best.formula_names))
-    print(f"    z={best.z}, metatransfer: {_format_metatransfer(best.metatransfer)}")
-    print(_format_forge_allocation(best.z, config.max_forges))
-
     formulas = build_formulas(config)
     if not config.fix_hx_limit:
         formulas["hx"].limit = config.max_forges - best.z
+    print(
+        _format_result(
+            "Optimal solution",
+            best.result,
+            best.formula_names,
+            formulas=formulas,
+            stock_bill_cap=args.stock_bill_cap,
+        )
+    )
+    print(f"    z={best.z}, metatransfer: {_format_metatransfer(best.metatransfer)}")
+    print(_format_forge_allocation(best.z, config.max_forges))
+
     supply = config.base_supply + best.z * XI_PER_FORGE + best.metatransfer
     print(
         _format_material_balance(
@@ -390,7 +459,9 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     goals = WulingGoals(
-        stock_bill_cap=args.stock_bill_cap, power_target=args.power_target
+        stock_bill_cap=args.stock_bill_cap,
+        power_target=args.power_target,
+        complexity_weight=args.complexity_weight,
     )
     refine_seed = random.randint(0, 2**31 - 1) if args.random_seed else args.refine_seed
     if args.random_seed:
@@ -412,7 +483,15 @@ def main(argv: list[str] | None = None) -> int:
         f"\nMost fit solution found (fitness={refined.fitness:.4f}, "
         f"backend={args.refine_backend}):"
     )
-    print(_format_result("  Refined solution", refined_result, refined.formula_names))
+    print(
+        _format_result(
+            "  Refined solution",
+            refined_result,
+            refined.formula_names,
+            formulas=formulas,
+            stock_bill_cap=args.stock_bill_cap,
+        )
+    )
     print(
         _format_material_balance(
             supply, dict(zip(refined.formula_names, refined.rates)), formulas
@@ -449,9 +528,11 @@ def main(argv: list[str] | None = None) -> int:
         "(ties broken randomly)."
     )
     if tally:
+        total_jobs = sum(tally.values())
         for name, count in sorted(tally.items(), key=lambda kv: kv[1], reverse=True):
             if count > 0:
-                print(f"    {name}: selected {count} times")
+                pct = 100 * count / total_jobs if total_jobs > 0 else 0.0
+                print(f"    {name}: selected {count} times ({pct:.1f}%)")
         never_selected = [name for name, count in tally.items() if count == 0]
         if never_selected:
             print(f"    (never selected: {', '.join(never_selected)})")

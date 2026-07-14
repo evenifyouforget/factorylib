@@ -140,13 +140,26 @@ POWER_YIELD = {"thermal_bank": 50.0}
 # WulingGoals.delivery_goods/gear_min_target are expressed in real items/
 # min (matching the spec's own units, e.g. "0.5/min of Cuprium
 # Component"), not raw recipe multiples -- plan_from_search_result and
-# refine._plan_from_rates scale by this before comparing.
+# refine._plan_from_rates scale by this before comparing. Also covers the
+# $-earning formulas (their "6" or "1" is otherwise only implicit in
+# Formula.output, e.g. sc's output=54*6 -- not separable back into a
+# per-item price and a batch size without this), so the CLI can show a
+# real items/min figure next to a formula's "multiples" count instead of
+# requiring the batch size to be known/assumed by the reader.
 GOOD_YIELD = {
     "sandleaf_powder": 90.0,
     "ferrium_component": 6.0,
     "xiranite_component": 6.0,
     "cuprium_component": 6.0,
     "hetonite_component": 6.0,
+    "sc": 6.0,
+    "lc": 6.0,
+    "hp": 6.0,
+    "hx": 6.0,
+    "ya": 6.0,
+    "yc": 6.0,
+    "xi_sell": 1.0,
+    "cp_sell": 1.0,
 }
 
 RESOURCE_LABELS = {

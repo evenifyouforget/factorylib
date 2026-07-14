@@ -5,6 +5,7 @@ from factorylib.endfield.goals import (
     WulingGoals,
     _plan_complexity,
     fitness,
+    item_rates,
     plan_from_search_result,
 )
 from factorylib.endfield.wuling import WulingConfig, search
@@ -188,8 +189,10 @@ def test_plan_from_search_result_uses_real_dollar_and_multiples():
     expected_multiples = dict(zip(result.formula_names, result.result.formula_rates))
     assert plan.dollar_rate == result.result.dollar_output
     assert plan.multiples == expected_multiples
-    # good_rates is just every formula's rate by name.
-    assert plan.good_rates == expected_multiples
+    # good_rates is every formula's rate by name, scaled to real items/min
+    # via GOOD_YIELD (now covers the $-earning formulas too, not just the
+    # secondary-goal ones).
+    assert plan.good_rates == item_rates(expected_multiples)
     # thermal_bank's rate is 0 in the $-maximizing LP optimum (it has no
     # $ value), so power_rate is 0 here too -- not because power isn't
     # modeled, but because the raw LP has no incentive to produce it.
