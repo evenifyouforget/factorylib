@@ -120,14 +120,13 @@ def _fmt(x: float) -> str:
 
 def _format_result(label: str, result, formula_names: list[str]) -> str:
     lines = [
-        f"{label}: dollar={_fmt(result.dollar_output)} ({result.dollar_output:.4f})"
+        f"{label}: dollar={_fmt(result.dollar_output)} $/min "
+        f"({result.dollar_output:.4f} $/min)"
     ]
     for name, rate in zip(formula_names, result.formula_rates):
         if abs(rate) > 1e-9:
             full_name = FORMULA_LABELS.get(name, name)
-            lines.append(
-                f"    {full_name}: {_fmt(rate)} multiples/min ({rate:.4f}/min)"
-            )
+            lines.append(f"    {full_name}: {_fmt(rate)} multiples ({rate:.4f})")
     slack_parts = [
         f"{RESOURCE_LABELS.get(name, name)}={_fmt(s)}"
         for name, s in zip(RESOURCE_NAMES, result.resource_slack)
