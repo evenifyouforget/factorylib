@@ -13,17 +13,29 @@ Backend choice: factorylib.search offers both the discrete-move simulated
 annealing ("sa") and a continuous scipy.optimize.dual_annealing backend
 ("scipy") for comparison. Tried on the 1.2e-full scenario (default
 WulingConfig/WulingGoals, several seeds): "sa" improved fitness from the
-LP-optimal plan's -151.2 to -97.2, trading ~$174/min for an all-integer
-solution (every multiple simplified to a whole number). "scipy" never
-improved on the LP-optimal plan at all -- that plan turns out to be a
-fully resource-saturated LP vertex (zero slack in every resource
-dimension), so *any* continuous perturbation away from it immediately
-violates some constraint; the penalty term in scipy_dual_annealing's
-objective drives the search right back to the starting point every time,
-so it never explores at all on this problem. "sa"'s discrete moves don't
-have this issue since round_down always frees slack before
-allocate_slack tries to spend it. "sa" is therefore the default; "scipy"
-is kept available for comparison, not because it currently wins here.
+LP-optimal plan's -218.7 to -164.5, trading ~$162/min for an all-integer
+solution that also picks up the two secondary goals cheap enough to be
+worth it here (Sandleaf Powder and Thermal Bank, both of which compete
+for little or nothing against the $-formulas). "scipy" never improved on
+the LP-optimal plan at all -- that plan turns out to be a fully
+resource-saturated LP vertex (zero slack in every resource dimension), so
+*any* continuous perturbation away from it immediately violates some
+constraint; the penalty term in scipy_dual_annealing's objective drives
+the search right back to the starting point every time, so it never
+explores at all on this problem. "sa"'s discrete moves don't have this
+issue since round_down always frees slack before allocate_slack tries to
+spend it. "sa" is therefore the default; "scipy" is kept available for
+comparison, not because it currently wins here.
+
+Note "sa" does not pick up the Gear Component goals on this scenario: at
+default weights, even sacrificing an entire SC Wuling Battery run
+(-$324/min) to fully satisfy the Ferrium Component floor still scores
+worse than not bothering (Originium Ore and Ferrium Ore are simply too
+valuable to the existing $-formulas already using them). This isn't a
+search bug -- fitness() genuinely disprefers that trade at these
+weights; raising WulingGoals.gear_importance (or lowering
+stock_bill_importance) will change that trade-off if a stronger gear
+guarantee is wanted.
 """
 
 from __future__ import annotations

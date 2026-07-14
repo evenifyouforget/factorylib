@@ -117,13 +117,41 @@ def test_simpler_multiples_score_higher_than_complex_ones():
     assert simple > complex_
 
 
+def test_default_gear_priority_and_delivery_goods_are_populated():
+    """Now that Components/Sandleaf Powder are modeled (see
+    factorylib.endfield.wuling), the defaults should reference them
+    rather than stay empty."""
+    goals = WulingGoals()
+    assert goals.gear_priority == [
+        "hetonite_component",
+        "xiranite_component",
+        "cuprium_component",
+        "ferrium_component",
+    ]
+    assert goals.delivery_goods == {"sandleaf_powder": 15.0}
+
+
+def test_default_gear_priority_penalizes_missing_components():
+    goals = WulingGoals()
+    with_components = fitness(
+        _plan(
+            good_rates={name: 0.5 for name in goals.gear_priority},
+        ),
+        goals,
+    )
+    without_components = fitness(_plan(good_rates={}), goals)
+    assert with_components > without_components
+
+
 def test_plan_from_search_result_uses_real_dollar_and_multiples():
     result = search(WulingConfig())
     plan = plan_from_search_result(result)
+    expected_multiples = dict(zip(result.formula_names, result.result.formula_rates))
     assert plan.dollar_rate == result.result.dollar_output
-    assert plan.multiples == dict(
-        zip(result.formula_names, result.result.formula_rates)
-    )
-    # Not modeled yet in the current recipe set (see module docstring).
+    assert plan.multiples == expected_multiples
+    # good_rates is just every formula's rate by name.
+    assert plan.good_rates == expected_multiples
+    # thermal_bank's rate is 0 in the $-maximizing LP optimum (it has no
+    # $ value), so power_rate is 0 here too -- not because power isn't
+    # modeled, but because the raw LP has no incentive to produce it.
     assert plan.power_rate == 0.0
-    assert plan.good_rates == {}

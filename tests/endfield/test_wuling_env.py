@@ -2,7 +2,9 @@ import numpy as np
 import pytest
 
 from factorylib.endfield.wuling import (
+    SECONDARY_GOAL_FORMULA_NAMES,
     WulingConfig,
+    build_formulas,
     preset_1p2_full,
     preset_1p2e_equiv_1p2d,
     preset_1p2e_full,
@@ -11,7 +13,13 @@ from factorylib.endfield.wuling import (
 
 
 def test_replicates_1p2e_full():
-    """Matches tests/wuling/test_wuling_1p2e.py::test_1p2e_full exactly."""
+    """Matches tests/wuling/test_wuling_1p2e.py::test_1p2e_full exactly.
+
+    The 6 trailing zeros are the secondary-goal formulas (Components,
+    Sandleaf Powder, Thermal Bank -- see wuling.py's module docstring):
+    they're zero-$ so the $-maximizing LP never uses them, and the first
+    12 rates/dollar/slack are unchanged from before that model extension.
+    """
     result = search(preset_1p2e_full())
     assert result.result.status == "optimal"
     assert result.z == 10
@@ -31,6 +39,12 @@ def test_replicates_1p2e_full():
             0,
             393 / 292,
             410 / 73,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
         ],
     )
     assert np.allclose(result.result.resource_slack, [0, 0, 0, 0, 0, 0, 0, 0])
@@ -89,3 +103,38 @@ def test_unknown_formula_output_raises():
 def test_bad_base_supply_shape_raises():
     with pytest.raises(ValueError, match="base_supply"):
         WulingConfig(base_supply=[0, 1, 2])
+
+
+def test_secondary_goals_off_drops_the_six_new_formulas():
+    f = build_formulas(WulingConfig(secondary_goals=False))
+    assert set(SECONDARY_GOAL_FORMULA_NAMES).isdisjoint(f)
+    assert len(f) == 12
+
+
+def test_secondary_goals_on_by_default():
+    f = build_formulas(WulingConfig())
+    assert set(SECONDARY_GOAL_FORMULA_NAMES) <= f.keys()
+    assert len(f) == 18
+
+
+def test_secondary_goals_never_change_1p2e_full_dollar_output():
+    with_secondary = search(WulingConfig())
+    without_secondary = search(WulingConfig(secondary_goals=False))
+    assert np.isclose(
+        with_secondary.result.dollar_output, without_secondary.result.dollar_output
+    )
+    assert np.isclose(with_secondary.result.dollar_output, 206735 / 146)
+
+
+def test_hetonite_component_consumption_matches_2x_hp_plus_2x_hx():
+    """12 Hetonite Part + 12 Heavy Xiranite = 2 runs each of hp/hx (each
+    produces 6 units per run)."""
+    f = build_formulas(WulingConfig())
+    expected = 2 * f["hp"].consumption + 2 * f["hx"].consumption
+    assert np.allclose(f["hetonite_component"].consumption, expected)
+
+
+def test_sandleaf_powder_consumes_nothing():
+    f = build_formulas(WulingConfig())
+    assert np.allclose(f["sandleaf_powder"].consumption, 0.0)
+    assert f["sandleaf_powder"].output == 0

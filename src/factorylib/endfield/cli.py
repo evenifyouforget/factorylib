@@ -14,6 +14,7 @@ from factorylib.endfield.wuling import (
     FORMULA_LABELS,
     RESOURCE_LABELS,
     RESOURCE_NAMES,
+    SECONDARY_GOAL_FORMULA_NAMES,
     XI_PER_FORGE,
     WulingConfig,
     build_formulas,
@@ -205,16 +206,24 @@ def main(argv: list[str] | None = None) -> int:
     if not config.fix_hx_limit:
         formulas["hx"].limit = config.max_forges - best.z
     supply = config.base_supply + best.z * XI_PER_FORGE + best.metatransfer
+
+    # Exclude the zero-$ secondary-goal formulas from tie detection: any
+    # slack they could (for free) absorb is a real LP degeneracy but not
+    # an economically meaningful "tied solution" (see wuling.py's module
+    # docstring).
+    primary_names = [
+        name for name in best.formula_names if name not in SECONDARY_GOAL_FORMULA_NAMES
+    ]
     alt_result = find_alternatives(
         supply,
-        list(formulas.values()),
+        [formulas[name] for name in primary_names],
         epsilon=args.epsilon,
         max_solutions=args.max_solutions,
     )
     if alt_result.alternatives:
         print("\nTied alternatives (same z/metatransfer, different LP vertex):")
         for i, alt in enumerate(alt_result.alternatives, 1):
-            print(_format_result(f"  Alternative {i}", alt, best.formula_names))
+            print(_format_result(f"  Alternative {i}", alt, primary_names))
 
     discrete_ties = [
         (result, z, mt)

@@ -3,7 +3,51 @@ search, generalizing the "1.2e full" model (tests/wuling/test_wuling_1p2e.py).
 
 Resource vector (8): [xi, ori, ferr, cup_ore, cup, sew, eff, inert]
 Formula order: cup_conv xi_sew sc lc hp hx ya yc xi_sell cp_sell [purify]
-               [purify_node]
+               [purify_node] [ferrium_component xiranite_component
+               cuprium_component hetonite_component sandleaf_powder
+               thermal_bank]
+
+The bracketed "secondary goals" formulas (gated by
+WulingConfig.secondary_goals, on by default) exist purely to give the
+Part 4/5 fitness function's gear/delivery/power terms something to act
+on -- they all have $ output=0, so the raw dollar-maximizing LP in
+search() never chooses to run them (any positive rate would only spend
+resources the $-formulas are already fully using, at zero marginal $
+value), and none of the existing scenario-equivalence tests change. They
+are additive collapsed formulas, not full re-derivations of the raw
+recipe list, and cover only part of Part 4's goal categories:
+  - hetonite_component / cuprium_component / xiranite_component /
+    ferrium_component collapse the Gearing Unit recipe plus its whole
+    upstream chain (Origocrust, Packed Origocrust, etc. approximated as
+    their Originium-Ore-equivalent cost -- the same "collapsed" approach
+    already used for sc/lc/hp/hx) into one formula each, scaled from the
+    existing hp/hx consumption vectors where those items are inputs.
+    Cryston Component and Amethyst Component are NOT modeled: their
+    chains need Amethyst Ore, a base resource this 8-resource model
+    doesn't track at all.
+  - sandleaf_powder: Planting Unit + Shredding Unit collapsed into one
+    formula that consumes none of the 8 tracked resources (matching the
+    spec's "very cheap material" framing) and produces a delivery-job
+    filler good. Its limit represents a modest, arbitrary number of
+    building instances (this LP has no building-count dimension), not a
+    real game constraint.
+  - thermal_bank: the simplest Thermal Bank recipe (raw Originium Ore ->
+    W), tracked via POWER_YIELD below since Formula.output is $-only.
+    The more resource-efficient battery -> power route (spec: "1.5 SC
+    Wuling Battery -> 3200 W") is NOT modeled -- it would require
+    splitting the existing sc/lc formulas into separate make/sell/power
+    steps (as tests/wuling/test_jade_gourd.py already does for hx/hp),
+    which risks changing behavior depended on by many existing tests;
+    left as a future extension.
+
+Being zero-$, these formulas are also zero-$ *ties* with doing nothing:
+find_alternatives (factorylib.alternatives) will correctly report that
+e.g. sandleaf_powder's rate is undetermined by the $-maximizing LP (any
+value up to its limit is equally optimal at $0 marginal value) -- a real
+LP degeneracy, but not an economically meaningful "tied solution" in the
+sense Part 2 was designed for (a genuine choice between two strategies).
+factorylib.endfield.cli filters SECONDARY_GOAL_FORMULA_NAMES out of its
+tied-alternatives search for exactly this reason.
 """
 
 from __future__ import annotations
@@ -13,6 +57,17 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from factorylib.optimize import Formula, OptimizeResult, maximize_dollar
+
+# Formulas that exist only to give the Part 4/5 fitness function
+# something to act on (see module docstring); all have $ output=0.
+SECONDARY_GOAL_FORMULA_NAMES = (
+    "ferrium_component",
+    "xiranite_component",
+    "cuprium_component",
+    "hetonite_component",
+    "sandleaf_powder",
+    "thermal_bank",
+)
 
 RESOURCE_NAMES = ["xi", "ori", "ferr", "cup_ore", "cup", "sew", "eff", "inert"]
 FORMULA_NAMES = [
@@ -28,7 +83,18 @@ FORMULA_NAMES = [
     "cp_sell",
     "purify",
     "purify_node",
+    "ferrium_component",
+    "xiranite_component",
+    "cuprium_component",
+    "hetonite_component",
+    "sandleaf_powder",
+    "thermal_bank",
 ]
+
+# W produced per multiple of a formula's rate. Formula.output is $-only, so
+# a formula that only contributes power (no $ value) is tracked here
+# instead -- see plan_from_search_result in factorylib.endfield.goals.
+POWER_YIELD = {"thermal_bank": 50.0}
 
 RESOURCE_LABELS = {
     "xi": "Xiranite",
@@ -54,6 +120,12 @@ FORMULA_LABELS = {
     "cp_sell": "Cuprium Part (sold)",
     "purify": "Purification Building (Inert Xircon Effluent → Xircon Effluent)",
     "purify_node": "Test Area Purification Node (Sewage → Xircon Effluent)",
+    "ferrium_component": "Ferrium Component",
+    "xiranite_component": "Xiranite Component",
+    "cuprium_component": "Cuprium Component",
+    "hetonite_component": "Hetonite Component",
+    "sandleaf_powder": "Sandleaf Powder",
+    "thermal_bank": "Thermal Bank (Originium Ore → Power)",
 }
 
 DEFAULT_BASE_SUPPLY = (0, 540, 90, 240, 0, 0, 0, 0)  # 1.2e base
@@ -81,6 +153,11 @@ class WulingConfig:
             eff) is included.
         purify_node: whether the Test Area Purification Node formula
             (sew -> eff, max 12 multiples) is included.
+        secondary_goals: whether the Part 4/5 gear/delivery/power formulas
+            (Components, Sandleaf Powder, Thermal Bank -- see module
+            docstring) are included. They never affect $-optimal search()
+            results (zero $ output), only what the Part 4/5 fitness
+            function and refine() can act on.
         formula_limits: per-formula `limit` overrides, e.g. {"ya": 0} to ban
             a formula. Keys must be in FORMULA_NAMES.
         formula_outputs: per-formula `output` ($/run) overrides. Keys must be
@@ -100,6 +177,7 @@ class WulingConfig:
     )
     purify_building: bool = True
     purify_node: bool = True
+    secondary_goals: bool = True
     formula_limits: dict[str, float] = field(default_factory=dict)
     formula_outputs: dict[str, float] = field(default_factory=dict)
     fix_hx_limit: bool = False
@@ -184,6 +262,49 @@ def build_formulas(config: WulingConfig) -> dict[str, Formula]:
             consumption=np.array([0, 0, 0, 0, 0, 30, -1, 0], dtype=float),
             output=0,
             limit=12,
+        )
+    if config.secondary_goals:
+        # Ferrium Component: 60 Origocrust + 60 Ferrium -> 6 Ferrium
+        # Component. Origocrust/Ferrium collapsed to their Ori/FerrOre
+        # equivalent cost (both 1:1 conversions upstream).
+        f["ferrium_component"] = Formula(
+            consumption=np.array([0, 60, 60, 0, 0, 0, 0, 0], dtype=float), output=0
+        )
+        # Xiranite Component: 60 Packed Origocrust + 60 Xiranite -> 6
+        # Xiranite Component. Packed Origocrust collapsed to its Ori
+        # equivalent cost.
+        f["xiranite_component"] = Formula(
+            consumption=np.array([60, 60, 0, 0, 0, 0, 0, 0], dtype=float), output=0
+        )
+        # Cuprium Component: 60 Cuprium Part + 60 Xiranite -> 6 Cuprium
+        # Component. Cuprium Part collapsed to its Cuprium equivalent cost
+        # (1:1 via Fitting Unit, same convention as cp_sell above).
+        f["cuprium_component"] = Formula(
+            consumption=np.array([60, 0, 0, 0, 60, 0, 0, 0], dtype=float), output=0
+        )
+        # Hetonite Component: 12 Hetonite Part + 12 Heavy Xiranite -> 6
+        # Hetonite Component (corrected from the raw recipe list's
+        # apparent typo "-> 6 Hetonite Part"). Consumption = 2x hp's +
+        # 2x hx's consumption vectors above (12 HP / 12 HX = 2 runs each
+        # of those 6-unit-per-run formulas).
+        f["hetonite_component"] = Formula(
+            consumption=np.array([120, 0, 60, 0, 480, -60, 60, 0], dtype=float),
+            output=0,
+        )
+        # Sandleaf Powder: Planting Unit (free) + Shredding Unit (30
+        # Sandleaf -> 90 Sandleaf Powder) collapsed; consumes none of the
+        # 8 tracked resources (matches "very cheap material" in the
+        # spec). limit is an arbitrary modest building-count stand-in,
+        # not a real constraint (this LP has no building-count dimension).
+        f["sandleaf_powder"] = Formula(
+            consumption=np.array([0, 0, 0, 0, 0, 0, 0, 0], dtype=float),
+            output=0,
+            limit=10,
+        )
+        # Thermal Bank: 7.5 Originium Ore -> 50 W (tracked via
+        # POWER_YIELD, not $ output -- see module docstring).
+        f["thermal_bank"] = Formula(
+            consumption=np.array([0, 7.5, 0, 0, 0, 0, 0, 0], dtype=float), output=0
         )
 
     for name, limit in config.formula_limits.items():

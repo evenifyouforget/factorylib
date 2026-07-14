@@ -30,13 +30,15 @@ Design alternatives considered for combining these into one score:
     the per-category weights rather than needing a different functional
     shape per goal, keeping the function itself simple.
 
-Formulas for power, delivery-job materials, and most gear-crafting
-materials (Components, etc.) do not exist yet in
-factorylib.endfield.wuling's 8-resource collapsed model, so
-plan_from_search_result() currently reports power_rate=0.0 and
-good_rates={} -- those goal terms are wired up and testable, but score as
-"no requirement" (see WulingGoals field docs) until that model is
-extended with the missing recipes.
+Power, delivery-job filler, and four of the six gear Components are
+modeled (as zero-$ formulas -- see factorylib.endfield.wuling's module
+docstring for exactly what's covered and what's still missing, e.g.
+Cryston/Amethyst Components and battery-diverted power). Since Formula
+carries only a $ output, power is tracked separately via
+factorylib.endfield.wuling.POWER_YIELD; plan_from_search_result() reads
+it off directly. good_rates is just every formula's rate by name (the
+same dict as multiples) -- WulingGoals.delivery_goods/gear_priority key
+into whichever of those names are actually modeled.
 """
 
 from __future__ import annotations
@@ -44,7 +46,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from factorylib.endfield.wuling import SearchResult
+from factorylib.endfield.wuling import POWER_YIELD, SearchResult
 from factorylib.simplicity import fraction_complexity
 
 
@@ -67,12 +69,17 @@ class WulingGoals:
         power_importance: overall weight of the power term.
         delivery_goods: name -> minimum acceptable production rate (per
             the same time unit as other rates) for delivery-job filler
-            materials. Empty by default: no delivery-good formulas exist
-            in the current recipe model yet (see module docstring).
+            materials. Defaults to sandleaf_powder (the only delivery
+            filler currently modeled) at 15/min -- well above the ~9.7/min
+            floor implied by "more than 14k in 24h", with a safety margin.
         delivery_importance: overall weight of each delivery-good term.
-        gear_priority: material/good names in descending demand priority
-            (e.g. ["ferrium_part", "cuprium_component", ...]). Empty by
-            default for the same reason as delivery_goods.
+        gear_priority: formula/good names in descending demand priority.
+            Defaults to the four Gear Components currently modeled (see
+            factorylib.endfield.wuling's module docstring for which ones
+            and why); the spec's fuller "Parts > Components > Bottles >
+            Xiranite/Heavy Xiranite > plants" ordering doesn't rank the
+            Components against each other, so this default order is a
+            reasonable placeholder, not a specified ranking.
         gear_min_target: minimum acceptable rate for each gear material
             (spec: "even 0.5/min of Cuprium Component" is already ample).
         gear_importance: overall weight of the highest-priority gear term.
@@ -92,9 +99,18 @@ class WulingGoals:
     stock_bill_importance: float = 20.0
     power_target: float = 7000.0
     power_importance: float = 10.0
-    delivery_goods: dict[str, float] = field(default_factory=dict)
+    delivery_goods: dict[str, float] = field(
+        default_factory=lambda: {"sandleaf_powder": 15.0}
+    )
     delivery_importance: float = 3.0
-    gear_priority: list[str] = field(default_factory=list)
+    gear_priority: list[str] = field(
+        default_factory=lambda: [
+            "hetonite_component",
+            "xiranite_component",
+            "cuprium_component",
+            "ferrium_component",
+        ]
+    )
     gear_min_target: float = 0.5
     gear_importance: float = 2.0
     gear_priority_decay: float = 0.5
@@ -108,12 +124,13 @@ class ProductionPlan:
 
     Attributes:
         dollar_rate: $/min (Wuling Stock Bill sell rate).
-        power_rate: W worth of batteries produced. 0.0 (the default) means
-            "not modeled" as much as "none produced" -- see module
-            docstring.
+        power_rate: W worth of power produced.
         good_rates: named production rates for delivery/gear-relevant
             materials, keyed to match WulingGoals.delivery_goods and
-            gear_priority. Empty by default for the same reason.
+            gear_priority. In practice this is just every formula's rate
+            by name (same as multiples) -- goods not actually modeled in
+            the current recipe set simply aren't present as keys, and
+            fitness() treats a missing key as rate 0.0.
         multiples: every formula's rate (by name), used for the
             simplicity/denominator penalty.
     """
@@ -126,12 +143,17 @@ class ProductionPlan:
 
 def plan_from_search_result(result: SearchResult) -> ProductionPlan:
     """Build a ProductionPlan from a factorylib.endfield.wuling.search()
-    result. power_rate and good_rates are left at their defaults since the
-    current recipe model doesn't track power or delivery/gear materials
-    yet (see module docstring)."""
+    result. power_rate is computed from POWER_YIELD; good_rates is every
+    formula's rate by name (see ProductionPlan.good_rates)."""
+    multiples = dict(zip(result.formula_names, result.result.formula_rates))
+    power_rate = sum(
+        rate * POWER_YIELD.get(name, 0.0) for name, rate in multiples.items()
+    )
     return ProductionPlan(
         dollar_rate=result.result.dollar_output,
-        multiples=dict(zip(result.formula_names, result.result.formula_rates)),
+        power_rate=power_rate,
+        good_rates=multiples,
+        multiples=multiples,
     )
 
 

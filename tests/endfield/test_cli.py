@@ -36,6 +36,13 @@ def test_main_prints_alternatives_section_when_tied(capsys):
 
 
 def test_main_no_ties_has_no_alternatives_section(capsys):
+    """Also guards against a real regression: sandleaf_powder has zero
+    resource cost, so the $-maximizing LP is trivially indifferent to its
+    rate (any value up to its limit is equally optimal at $0 marginal
+    value) -- a genuine LP degeneracy, but not an economically meaningful
+    "tied solution". main() excludes SECONDARY_GOAL_FORMULA_NAMES from
+    tie detection for exactly this reason; this test would fail if that
+    exclusion were removed."""
     rc = main([])
     out = capsys.readouterr().out
     assert rc == 0
