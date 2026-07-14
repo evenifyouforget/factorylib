@@ -57,7 +57,7 @@ def test_refine_sa_result_is_feasible():
     )
 
     formulas_dict = build_formulas(config)
-    formulas_dict["hx"].limit = config.max_forges - base.z
+    formulas_dict["hx_make"].limit = config.max_forges - base.z
     formulas = [formulas_dict[name] for name in result.formula_names]
     consumption = np.stack([f.consumption for f in formulas], axis=1)
     supply = config.base_supply + base.z * XI_PER_FORGE + base.metatransfer
@@ -106,7 +106,7 @@ def test_refine_dollar_output_matches_rates_dot_outputs():
     )
 
     formulas_dict = build_formulas(config)
-    formulas_dict["hx"].limit = config.max_forges - base.z
+    formulas_dict["hx_make"].limit = config.max_forges - base.z
     outputs = np.array(
         [formulas_dict[name].output for name in result.formula_names], dtype=float
     )

@@ -112,7 +112,7 @@ def refine(
     forge allocation (z) and metatransfer base already chosen there."""
     formulas_dict = build_formulas(wuling_config)
     if not wuling_config.fix_hx_limit:
-        formulas_dict["hx"].limit = wuling_config.max_forges - base.z
+        formulas_dict["hx_make"].limit = wuling_config.max_forges - base.z
     formulas = [formulas_dict[name] for name in base.formula_names]
     original_outputs = np.array([f.output for f in formulas], dtype=float)
     supply = wuling_config.base_supply + base.z * XI_PER_FORGE + base.metatransfer

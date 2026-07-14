@@ -105,10 +105,10 @@ def test_main_prints_alternatives_section_when_tied(capsys):
             "--max-forges",
             "8",
             "--base-supply",
-            "0,480,90,180,0,0,0,0,0,0",
+            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
             "--no-purify-node",
             "--formula-output",
-            "hp=288",
+            "hp_sell=288",
         ]
     )
     out = capsys.readouterr().out
@@ -140,10 +140,10 @@ def test_main_prints_discrete_branch_ties(capsys):
             "--max-forges",
             "8",
             "--base-supply",
-            "0,480,90,180,0,0,0,0,0,0",
+            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
             "--no-purify-node",
             "--formula-output",
-            "hx=114",
+            "hx_sell=114",
         ]
     )
     out = capsys.readouterr().out
@@ -158,9 +158,9 @@ def test_main_explicit_purify_building_and_metatransfer_flags(capsys):
         [
             "--purify-building",
             "--metatransfer",
-            "0,0,0,0,0,0,0,0,25,0",  # 25 Dense Originium Powder
+            "0,0,0,0,0,0,0,0,25,0,0,0,0,0,0,0,0,0",  # 25 Dense Originium Powder
             "--metatransfer",
-            "0,0,25,0,0,0,0,0,0,0",  # 25 Ferrium Ore
+            "0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",  # 25 Ferrium Ore
         ]
     )
     out = capsys.readouterr().out

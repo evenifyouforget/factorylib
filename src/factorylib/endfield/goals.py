@@ -208,8 +208,8 @@ def plan_from_search_result(
         rate * POWER_YIELD.get(name, 0.0) for name, rate in multiples.items()
     )
     formulas_dict = build_formulas(config)
-    if not config.fix_hx_limit and "hx" in formulas_dict:
-        formulas_dict["hx"].limit = config.max_forges - result.z
+    if not config.fix_hx_limit and "hx_make" in formulas_dict:
+        formulas_dict["hx_make"].limit = config.max_forges - result.z
     consumption = {
         name: formulas_dict[name].consumption
         for name in result.formula_names

@@ -54,7 +54,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--base-supply",
         type=_parse_float_list,
         default=None,
-        help="comma-separated 8-value resource supply ("
+        help=f"comma-separated {len(RESOURCE_NAMES)}-value resource supply ("
         + ", ".join(RESOURCE_NAMES)
         + "); default: 1.2e base",
     )
@@ -68,8 +68,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="append",
         default=None,
         dest="metatransfer",
-        help="comma-separated 8-value metatransfer top-up; repeatable; "
-        "default: the two standard metatransfers",
+        help=f"comma-separated {len(RESOURCE_NAMES)}-value metatransfer top-up; "
+        "repeatable; default: the two standard metatransfers",
     )
 
     # No short flags on these four: they're store_true/store_false pairs
@@ -439,7 +439,7 @@ def main(argv: list[str] | None = None) -> int:
     best = search(config)
     formulas = build_formulas(config)
     if not config.fix_hx_limit:
-        formulas["hx"].limit = config.max_forges - best.z
+        formulas["hx_make"].limit = config.max_forges - best.z
     print(
         _format_result(
             "Optimal solution",
@@ -462,9 +462,20 @@ def main(argv: list[str] | None = None) -> int:
     # Exclude the zero-$ secondary-goal formulas from tie detection: any
     # slack they could (for free) absorb is a real LP degeneracy but not
     # an economically meaningful "tied solution" (see wuling.py's module
-    # docstring).
+    # docstring). origocrust_make/packed_origocrust_make must go with
+    # them: their *sole* consumers (ferrium_component/xiranite_component)
+    # are excluded above, so left in, they'd become dangling zero-$
+    # formulas with no real purpose in this filtered sub-problem --
+    # find_alternatives' epsilon nudge would then "discover" spurious
+    # alternatives that waste real Originium Ore on them for no benefit
+    # (same false-tie class this exclusion already prevents for the
+    # Components themselves).
+    _tie_detection_exclude = SECONDARY_GOAL_FORMULA_NAMES + (
+        "origocrust_make",
+        "packed_origocrust_make",
+    )
     primary_names = [
-        name for name in best.formula_names if name not in SECONDARY_GOAL_FORMULA_NAMES
+        name for name in best.formula_names if name not in _tie_detection_exclude
     ]
     alt_result = find_alternatives(
         supply,
