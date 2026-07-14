@@ -79,6 +79,36 @@ def test_main_explicit_purify_building_and_metatransfer_flags(capsys):
     assert "206735/146" in out
 
 
+def test_main_prints_refined_solution_section(capsys):
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Most fit solution found" in out
+    assert "Refined solution" in out
+
+
+def test_main_refine_backend_scipy_runs(capsys):
+    rc = main(["--refine-backend", "scipy", "--refine-iterations", "50"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "backend=scipy" in out
+
+
+def test_main_refine_reproducible_with_same_seed(capsys):
+    main(["--refine-seed", "3", "--refine-iterations", "200"])
+    out1 = capsys.readouterr().out
+    main(["--refine-seed", "3", "--refine-iterations", "200"])
+    out2 = capsys.readouterr().out
+    assert out1 == out2
+
+
+def test_main_stock_bill_cap_and_power_target_flags_accepted(capsys):
+    rc = main(["--stock-bill-cap", "2000", "--power-target", "9000"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Most fit solution found" in out
+
+
 def test_bad_purify_flags_mutually_exclusive():
     with pytest.raises(SystemExit):
         main(["--purify-node", "--no-purify-node"])

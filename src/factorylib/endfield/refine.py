@@ -1,0 +1,100 @@
+"""Part 5: search for a more-fit alternative to the LP-optimal plan.
+
+factorylib.endfield.wuling.search() maximizes raw $ only. This refines
+that solution using factorylib.search's local search, scoring candidates
+with factorylib.endfield.goals.fitness instead -- which can prefer a plan
+with slightly less $ but simpler fractions, or a bit of production
+diverted to secondary goals (see Part 4). It starts from the LP optimum,
+so the two moves (round a rate down to a simpler fraction; allocate freed
+slack to another formula) can only trade $ for simplicity/secondary
+goals, never discard money for nothing.
+
+Backend choice: factorylib.search offers both the discrete-move simulated
+annealing ("sa") and a continuous scipy.optimize.dual_annealing backend
+("scipy") for comparison. Tried on the 1.2e-full scenario (default
+WulingConfig/WulingGoals, several seeds): "sa" improved fitness from the
+LP-optimal plan's -151.2 to -97.2, trading ~$174/min for an all-integer
+solution (every multiple simplified to a whole number). "scipy" never
+improved on the LP-optimal plan at all -- that plan turns out to be a
+fully resource-saturated LP vertex (zero slack in every resource
+dimension), so *any* continuous perturbation away from it immediately
+violates some constraint; the penalty term in scipy_dual_annealing's
+objective drives the search right back to the starting point every time,
+so it never explores at all on this problem. "sa"'s discrete moves don't
+have this issue since round_down always frees slack before
+allocate_slack tries to spend it. "sa" is therefore the default; "scipy"
+is kept available for comparison, not because it currently wins here.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+from factorylib.endfield.goals import ProductionPlan, WulingGoals, fitness
+from factorylib.endfield.wuling import (
+    XI_PER_FORGE,
+    SearchResult,
+    WulingConfig,
+    build_formulas,
+)
+from factorylib.search import SearchConfig, search
+
+
+@dataclass
+class RefinedResult:
+    """Result of refine(). rates/formula_names align positionally, as in
+    SearchResult."""
+
+    rates: np.ndarray
+    dollar_output: float
+    fitness: float
+    formula_names: list[str]
+
+
+def _plan_from_rates(
+    rates: np.ndarray, formula_names: list[str], original_outputs: np.ndarray
+) -> ProductionPlan:
+    return ProductionPlan(
+        dollar_rate=float(np.asarray(rates) @ original_outputs),
+        multiples=dict(zip(formula_names, rates)),
+    )
+
+
+def refine(
+    base: SearchResult,
+    wuling_config: WulingConfig,
+    goals: WulingGoals,
+    search_config: SearchConfig | None = None,
+    *,
+    backend: str = "sa",
+) -> RefinedResult:
+    """Search for a more-fit nearby plan than base (an LP-optimal
+    SearchResult from factorylib.endfield.wuling.search()), at the same
+    forge allocation (z) and metatransfer base already chosen there."""
+    formulas_dict = build_formulas(wuling_config)
+    if not wuling_config.fix_hx_limit:
+        formulas_dict["hx"].limit = wuling_config.max_forges - base.z
+    formulas = [formulas_dict[name] for name in base.formula_names]
+    original_outputs = np.array([f.output for f in formulas], dtype=float)
+    supply = wuling_config.base_supply + base.z * XI_PER_FORGE + base.metatransfer
+
+    def fitness_fn(rates: np.ndarray) -> float:
+        plan = _plan_from_rates(rates, base.formula_names, original_outputs)
+        return fitness(plan, goals)
+
+    outcome = search(
+        supply,
+        formulas,
+        base.result.formula_rates,
+        fitness_fn,
+        search_config,
+        backend=backend,
+    )
+    return RefinedResult(
+        rates=outcome.rates,
+        dollar_output=float(outcome.rates @ original_outputs),
+        fitness=outcome.fitness,
+        formula_names=base.formula_names,
+    )

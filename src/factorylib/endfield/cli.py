@@ -8,6 +8,8 @@ import argparse
 import numpy as np
 
 from factorylib.alternatives import find_alternatives
+from factorylib.endfield.goals import WulingGoals
+from factorylib.endfield.refine import refine
 from factorylib.endfield.wuling import (
     FORMULA_LABELS,
     RESOURCE_LABELS,
@@ -18,6 +20,8 @@ from factorylib.endfield.wuling import (
     search,
 )
 from factorylib.fractions import snap_value
+from factorylib.optimize import OptimizeResult
+from factorylib.search import SearchConfig
 
 
 def _parse_float_list(s: str) -> np.ndarray:
@@ -111,6 +115,39 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="$ tolerance for reporting a different discrete (z, metatransfer) "
         "branch as tied with the optimum",
     )
+    parser.add_argument(
+        "--stock-bill-cap",
+        type=float,
+        default=1090.0,
+        help="max $/min actually sellable, limited by savings generation "
+        "(default: 700 + 390 per the current Sky King Flats Construction "
+        "Site + Cardiac Remediation Station rates)",
+    )
+    parser.add_argument(
+        "--power-target",
+        type=float,
+        default=7000.0,
+        help="W worth of batteries to aim for (default: 7000, average player demand)",
+    )
+    parser.add_argument(
+        "--refine-iterations",
+        type=int,
+        default=2000,
+        help="number of simulated-annealing moves to try when searching for "
+        "a more-fit alternative to the optimal solution",
+    )
+    parser.add_argument(
+        "--refine-seed",
+        type=int,
+        default=0,
+        help="RNG seed for the refine search (reproducible by default)",
+    )
+    parser.add_argument(
+        "--refine-backend",
+        choices=["sa", "scipy"],
+        default="sa",
+        help="refine search backend (default: sa; see factorylib.endfield.refine)",
+    )
     return parser
 
 
@@ -194,5 +231,26 @@ def main(argv: list[str] | None = None) -> int:
                     f"  z={z}, metatransfer={mt.tolist()}", result, best.formula_names
                 )
             )
+
+    goals = WulingGoals(
+        stock_bill_cap=args.stock_bill_cap, power_target=args.power_target
+    )
+    search_config = SearchConfig(
+        iterations=args.refine_iterations, seed=args.refine_seed
+    )
+    refined = refine(best, config, goals, search_config, backend=args.refine_backend)
+    consumption = np.stack([f.consumption for f in formulas.values()], axis=1)
+    refined_slack = np.maximum(0.0, supply - consumption @ refined.rates)
+    refined_result = OptimizeResult(
+        status="optimal",
+        dollar_output=refined.dollar_output,
+        formula_rates=refined.rates,
+        resource_slack=refined_slack,
+    )
+    print(
+        f"\nMost fit solution found (fitness={refined.fitness:.4f}, "
+        f"backend={args.refine_backend}):"
+    )
+    print(_format_result("  Refined solution", refined_result, refined.formula_names))
 
     return 0
