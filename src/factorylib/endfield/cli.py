@@ -8,6 +8,8 @@ import argparse
 import numpy as np
 
 from factorylib.alternatives import find_alternatives
+from factorylib.delivery import DeliverySimConfig
+from factorylib.endfield.delivery import predict_delivery_selections
 from factorylib.endfield.goals import WulingGoals
 from factorylib.endfield.refine import refine
 from factorylib.endfield.wuling import (
@@ -150,6 +152,31 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="sa",
         help="refine search backend (default: sa; see factorylib.endfield.refine)",
     )
+    parser.add_argument(
+        "--delivery-box-capacity",
+        type=float,
+        default=14000.0,
+        help="items removed from the selected material per delivery job "
+        "(default: 14000)",
+    )
+    parser.add_argument(
+        "--delivery-jobs-per-day",
+        type=int,
+        default=2,
+        help="delivery jobs run per day (default: 2)",
+    )
+    parser.add_argument(
+        "--delivery-sim-days",
+        type=int,
+        default=100,
+        help="number of days to simulate delivery-job material selection",
+    )
+    parser.add_argument(
+        "--delivery-startup-days",
+        type=float,
+        default=1.0,
+        help="days of accumulation before the first simulated delivery job",
+    )
     return parser
 
 
@@ -289,5 +316,31 @@ def main(argv: list[str] | None = None) -> int:
             "wiring, priority overflow, backpressure) -- see "
             "factorylib.endfield.goals's module docstring."
         )
+
+    delivery_config = DeliverySimConfig(
+        startup_days=args.delivery_startup_days,
+        simulation_days=args.delivery_sim_days,
+        jobs_per_day=args.delivery_jobs_per_day,
+        box_capacity=args.delivery_box_capacity,
+    )
+    rates_by_name = dict(zip(refined.formula_names, refined.rates))
+    tally = predict_delivery_selections(rates_by_name, refined_slack, delivery_config)
+    print(
+        f"\nDelivery job prediction ({delivery_config.simulation_days} days, "
+        f"{delivery_config.jobs_per_day} jobs/day, "
+        f"{_fmt(delivery_config.box_capacity)}/job, after "
+        f"{_fmt(delivery_config.startup_days)}-day startup): what a "
+        "material's rate meets a target doesn't mean it's what gets picked --"
+        " this simulates the depot's actual highest-amount auto-select."
+    )
+    if tally:
+        for name, count in sorted(tally.items(), key=lambda kv: kv[1], reverse=True):
+            if count > 0:
+                print(f"    {name}: selected {count} times")
+        never_selected = [name for name, count in tally.items() if count == 0]
+        if never_selected:
+            print(f"    (never selected: {', '.join(never_selected)})")
+    else:
+        print("    (nothing accumulates unconsumed in the depot)")
 
     return 0

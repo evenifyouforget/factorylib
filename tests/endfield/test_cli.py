@@ -106,6 +106,32 @@ def test_main_prints_refined_solution_section(capsys):
     assert "Refined solution" in out
 
 
+def test_main_prints_delivery_prediction(capsys):
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Delivery job prediction" in out
+    assert "Sandleaf Powder: selected" in out
+
+
+def test_main_delivery_flags_accepted(capsys):
+    rc = main(
+        [
+            "--delivery-box-capacity",
+            "20000",
+            "--delivery-jobs-per-day",
+            "3",
+            "--delivery-sim-days",
+            "10",
+            "--delivery-startup-days",
+            "2",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "10 days, 3 jobs/day" in out
+
+
 def test_main_prints_headroom_warning_when_present(capsys):
     """Forcing headroom_lost via a mock: real scenarios where a move
     happens to fully saturate a previously-slack resource are rare (see
