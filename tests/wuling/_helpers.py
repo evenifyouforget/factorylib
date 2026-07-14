@@ -1,10 +1,8 @@
 """Shared helpers for Wuling 1.2 scenario tests."""
 
-import warnings
-from fractions import Fraction
-
 import numpy as np
 
+from factorylib.fractions import snap_value
 from factorylib.optimize import Formula, maximize_dollar
 
 BASE_INCOME = np.array([0, 480, 90, 180], dtype=float)
@@ -31,25 +29,6 @@ def _make_wuling_formulas(purification=True):
         "xi": make_formula([1, 0, 0, 0], output=1),
         "cp": make_formula([0, 0, 0, 1], output=1),
     }
-
-
-def snap_value(x: float, max_denom: int = 1000, tol: float = 1e-9) -> Fraction:
-    """Convert float to nearest simple Fraction.
-
-    Warns if no fraction with denominator <= max_denom is within tol.
-    Useful for snapshotting LP results into test expected values:
-
-        best, z, mt = _search(BASE_INCOME, formulas)
-        print(snap_value(best.dollar_output))   # e.g. Fraction(2229, 2)
-        print([snap_value(r) for r in best.formula_rates])
-    """
-    f = Fraction(x).limit_denominator(max_denom)
-    if abs(float(f) - x) > tol:
-        warnings.warn(
-            f"snap_value: {x!r} not close to any fraction with denom <= {max_denom} "
-            f"(nearest: {f}, diff: {abs(float(f) - x):.2e})"
-        )
-    return f
 
 
 def snap_result(result, max_denom: int = 1000, tol: float = 1e-9) -> dict:
