@@ -1,7 +1,8 @@
 """Standard Wuling environment: configurable formula set + forge/metatransfer
 search, generalizing the "1.2e full" model (tests/wuling/test_wuling_1p2e.py).
 
-Resource vector (9): [xi, ori, ferr, cup_ore, cup, sew, eff, inert, dop]
+Resource vector (10): [xi, ori, ferr, cup_ore, cup, sew, eff, inert, dop,
+                        sandleaf]
 Formula order: cup_conv xi_sew ori_to_dop sc lc hp hx ya yc xi_sell cp_sell
                [purify] [purify_node] [ferrium_component xiranite_component
                cuprium_component hetonite_component sandleaf_powder
@@ -16,14 +17,33 @@ chain off raw Ore that DOP cannot substitute for, and Thermal Bank burns
 raw Ore directly. Folding DOP into a single fungible "ori" pool made a
 metatransfer of DOP (see DEFAULT_METATRANSFERS) incorrectly spendable by
 the Component/Thermal Bank formulas too. ori_to_dop (60 ori -> 30 dop,
-lossless, matching the existing "collapsed" convention of not tracking
-the Sandleaf Powder co-input Grinding also needs) lets locally-mined Ore
-still fund SC/LC exactly as before; metatransferred dop bypasses that
-conversion, exactly as a real metatransfer would. This changes nothing
-about $-optimal search() results (ori_to_dop is a lossless pass-through
-with no other constraint, so the net effect for local-only play is
-identical to the old direct "ori" consumption) -- it only matters once
-Components exist to (incorrectly, before this fix) compete for it.
+lossless) lets locally-mined Ore still fund SC/LC exactly as before;
+metatransferred dop bypasses that conversion, exactly as a real
+metatransfer would. This changes nothing about $-optimal search()
+results (ori_to_dop is a lossless pass-through with no other constraint,
+so the net effect for local-only play is identical to the old direct
+"ori" consumption) -- it only matters once Components exist to
+(incorrectly, before this fix) compete for it.
+
+"sandleaf" (Sandleaf Powder) is also its own resource dimension, not a
+disconnected dead end. It's a real shared co-input to several Grinding
+Unit recipes; this model only wires up the one it already tracks
+(ori_to_dop, the Grinding Unit run that makes Dense Originium Powder: 60
+Originium Powder + 30 Sandleaf Powder -> 30 Dense Originium Powder), so
+ori_to_dop now consumes 30 sandleaf per multiple. sandleaf_powder (the
+Planting Unit + Shredding Unit formula) produces it (90 items/multiple,
+matching GOOD_YIELD). Its other real consumers -- Dense Origocrust
+Powder for Packed Origocrust, Dense Ferrium Powder for Steel, Cryston
+Powder, Dense Carbon Powder, etc. -- aren't modeled at all yet, so
+sandleaf's only tracked sink remains ori_to_dop until the de-flattening
+workstream adds Packed Origocrust's own Grinding Unit step. Its limit
+(5, down from an earlier arbitrary 10) is still just a modest
+building-count stand-in, not a real game constraint, but is now sized to
+comfortably cover ori_to_dop's actual floor demand (9 multiples * 30
+sandleaf / 90 yield = 3.0) plus the delivery-job target, rather than
+letting the zero-cost delivery-goods reward push it to an arbitrarily
+large excess (see factorylib.endfield.goals's diminishing-but-never-
+penalized excess term).
 
 The bracketed "secondary goals" formulas (gated by
 WulingConfig.secondary_goals, on by default) exist purely to give the
@@ -47,11 +67,12 @@ recipe list, and cover only part of Part 4's goal categories:
     their chains need Amethyst Ore, a base resource this model doesn't
     track at all.
   - sandleaf_powder: Planting Unit + Shredding Unit collapsed into one
-    formula that consumes none of the tracked resources (matching the
-    spec's "very cheap material" framing) and produces a delivery-job
-    filler good. Its limit represents a modest, arbitrary number of
-    building instances (this LP has no building-count dimension), not a
-    real game constraint.
+    formula that consumes none of the *tracked base* resources (matching
+    the spec's "very cheap material" framing) but does produce the
+    "sandleaf" resource dimension, a real shared co-input ori_to_dop
+    needs -- see the top of this docstring. Its limit represents a
+    modest, arbitrary number of building instances (this LP has no
+    building-count dimension), not a real game constraint.
   - thermal_bank: the simplest Thermal Bank recipe (raw Originium Ore ->
     W), tracked via POWER_YIELD below since Formula.output is $-only.
     The more resource-efficient battery -> power route (spec: "1.5 SC
@@ -61,12 +82,16 @@ recipe list, and cover only part of Part 4's goal categories:
     which risks changing behavior depended on by many existing tests;
     left as a future extension.
 
-Being zero-$, these formulas are also zero-$ *ties* with doing nothing:
-find_alternatives (factorylib.alternatives) will correctly report that
-e.g. sandleaf_powder's rate is undetermined by the $-maximizing LP (any
-value up to its limit is equally optimal at $0 marginal value) -- a real
-LP degeneracy, but not an economically meaningful "tied solution" in the
-sense Part 2 was designed for (a genuine choice between two strategies).
+Being zero-$, these formulas are also zero-$ *ties* with doing nothing,
+above whatever floor the $-maximizing LP actually needs from them.
+sandleaf_powder is the one exception with a genuine floor now: ori_to_dop
+needs 30 sandleaf per multiple, so at ori_to_dop's LP-chosen rate,
+sandleaf_powder's rate is pinned to at least that floor -- but any excess
+above it remains a real LP degeneracy (any value up to its limit is
+equally optimal at $0 marginal value), same as ferrium_component /
+xiranite_component / cuprium_component / hetonite_component / thermal_bank
+always are. Not an economically meaningful "tied solution" in the sense
+Part 2 was designed for (a genuine choice between two strategies).
 factorylib.endfield.cli filters SECONDARY_GOAL_FORMULA_NAMES out of its
 tied-alternatives search for exactly this reason.
 """
@@ -90,7 +115,18 @@ SECONDARY_GOAL_FORMULA_NAMES = (
     "thermal_bank",
 )
 
-RESOURCE_NAMES = ["xi", "ori", "ferr", "cup_ore", "cup", "sew", "eff", "inert", "dop"]
+RESOURCE_NAMES = [
+    "xi",
+    "ori",
+    "ferr",
+    "cup_ore",
+    "cup",
+    "sew",
+    "eff",
+    "inert",
+    "dop",
+    "sandleaf",
+]
 FORMULA_NAMES = [
     "cup_conv",
     "xi_sew",
@@ -128,6 +164,7 @@ RESOURCE_BELT_SPEED = {
     "eff": 120.0,
     "inert": 120.0,
     "dop": 30.0,
+    "sandleaf": 30.0,
 }
 
 # W produced per multiple of a formula's rate. Formula.output is $-only, so
@@ -172,6 +209,7 @@ RESOURCE_LABELS = {
     "eff": "Xircon Effluent",
     "inert": "Inert Xircon Effluent",
     "dop": "Dense Originium Powder",
+    "sandleaf": "Sandleaf Powder",
 }
 
 FORMULA_LABELS = {
@@ -207,13 +245,13 @@ METATRANSFER_ITEMS = {
     "ferr": "Ferrium Ore",
 }
 
-DEFAULT_BASE_SUPPLY = (0, 540, 90, 240, 0, 0, 0, 0, 0)  # 1.2e base
+DEFAULT_BASE_SUPPLY = (0, 540, 90, 240, 0, 0, 0, 0, 0, 0)  # 1.2e base
 DEFAULT_MAX_FORGES = 12
 DEFAULT_METATRANSFERS = (
-    (0, 0, 0, 0, 0, 0, 0, 0, 25),  # 25 Dense Originium Powder
-    (0, 0, 25, 0, 0, 0, 0, 0, 0),  # 25 Ferrium Ore
+    (0, 0, 0, 0, 0, 0, 0, 0, 25, 0),  # 25 Dense Originium Powder
+    (0, 0, 25, 0, 0, 0, 0, 0, 0, 0),  # 25 Ferrium Ore
 )
-XI_PER_FORGE = np.array([30, 0, 0, 0, 0, 0, 0, 0, 0], dtype=float)
+XI_PER_FORGE = np.array([30, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=float)
 
 
 @dataclass
@@ -285,79 +323,88 @@ def build_formulas(config: WulingConfig) -> dict[str, Formula]:
     "dop" resource via ori_to_dop -- see module docstring), then applies
     config.formula_limits / config.formula_outputs overrides.
     """
+    # ori_to_dop's Sandleaf Powder co-input is only tracked when
+    # secondary_goals is on -- that's the only mode where anything
+    # produces "sandleaf" at all (base_supply never does; it's not a
+    # mined resource). With secondary_goals off, this reverts to the
+    # original collapsed convention of not tracking that co-input, so
+    # disabling secondary_goals still never changes $-optimal search()
+    # results (see test_secondary_goals_never_change_1p2e_full_dollar_output).
+    _ori_to_dop_sandleaf = 30.0 if config.secondary_goals else 0.0
     f = {
         # 30 cup_ore -> 30 cup + 30 sew
         "cup_conv": Formula(
-            consumption=np.array([0, 0, 0, 30, -30, -30, 0, 0, 0], dtype=float),
+            consumption=np.array([0, 0, 0, 30, -30, -30, 0, 0, 0, 0], dtype=float),
             output=0,
         ),
         # 30 xi + 30 sew -> 30 eff + 30 inert
         "xi_sew": Formula(
-            consumption=np.array([30, 0, 0, 0, 0, 30, -30, -30, 0], dtype=float),
+            consumption=np.array([30, 0, 0, 0, 0, 30, -30, -30, 0, 0], dtype=float),
             output=0,
         ),
-        # 60 ori -> 30 dop (collapses 2 Shredding Units, each 30 ori -> 30
-        # Originium Powder, feeding 1 Grinding Unit, 60 Powder -> 30 DOP;
-        # the Sandleaf Powder co-input Grinding also needs isn't tracked,
-        # matching the pre-existing collapsed-formula convention
-        # elsewhere). Scaled to belt size (30/min) like every other
+        # 60 ori (+ 30 sandleaf, if secondary_goals) -> 30 dop (collapses 2
+        # Shredding Units, each 30 ori -> 30 Originium Powder, feeding 1
+        # Grinding Unit, 60 Powder + 30 Sandleaf Powder -> 30 DOP -- see
+        # module docstring). Scaled to belt size (30/min) like every other
         # formula's "1 multiple" -- the minimally-reduced 2:1 ratio alone
         # ("2 ori -> 1 dop") made a formula's rate mean "2 ore/min" here
         # instead of a recognizable physical unit everywhere else.
         "ori_to_dop": Formula(
-            consumption=np.array([0, 60, 0, 0, 0, 0, 0, 0, -30], dtype=float),
+            consumption=np.array(
+                [0, 60, 0, 0, 0, 0, 0, 0, -30, _ori_to_dop_sandleaf], dtype=float
+            ),
             output=0,
         ),
         # SC: (60 eff + 30 ferr -> 30 Xircon + 30 sew)
         #     + (30 Xircon + 120 dop -> 6 SC)
         "sc": Formula(
-            consumption=np.array([0, 0, 30, 0, 0, -30, 60, 0, 120], dtype=float),
+            consumption=np.array([0, 0, 30, 0, 0, -30, 60, 0, 120, 0], dtype=float),
             output=54 * 6,
         ),
         # LC: 30 xi + 90 dop -> 6 LC
         "lc": Formula(
-            consumption=np.array([30, 0, 0, 0, 0, 0, 0, 0, 90], dtype=float),
+            consumption=np.array([30, 0, 0, 0, 0, 0, 0, 0, 90, 0], dtype=float),
             output=25 * 6,
         ),
         # HP: (240 cup + 30 ferr -> 30 Hetonite + 30 sew) + (30 Hetonite -> 6 HP)
         "hp": Formula(
-            consumption=np.array([0, 0, 30, 0, 240, -30, 0, 0, 0], dtype=float),
+            consumption=np.array([0, 0, 30, 0, 240, -30, 0, 0, 0, 0], dtype=float),
             output=48 * 6,
         ),
         # HX: 60 xi + 30 eff -> 6 HX
         "hx": Formula(
-            consumption=np.array([60, 0, 0, 0, 0, 0, 30, 0, 0], dtype=float),
+            consumption=np.array([60, 0, 0, 0, 0, 0, 30, 0, 0, 0], dtype=float),
             output=27 * 6,
         ),
         # YA: 120 cup -> 6 ya
         "ya": Formula(
-            consumption=np.array([0, 0, 0, 0, 120, 0, 0, 0, 0], dtype=float),
+            consumption=np.array([0, 0, 0, 0, 120, 0, 0, 0, 0, 0], dtype=float),
             output=22 * 6,
         ),
         # YC: 120 ferr -> 6 yc
         "yc": Formula(
-            consumption=np.array([0, 0, 120, 0, 0, 0, 0, 0, 0], dtype=float),
+            consumption=np.array([0, 0, 120, 0, 0, 0, 0, 0, 0, 0], dtype=float),
             output=16 * 6,
         ),
         # Sell xi at $1
         "xi_sell": Formula(
-            consumption=np.array([1, 0, 0, 0, 0, 0, 0, 0, 0], dtype=float), output=1
+            consumption=np.array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=float), output=1
         ),
         # Sell cup at $1 (after cup_conv conversion)
         "cp_sell": Formula(
-            consumption=np.array([0, 0, 0, 0, 1, 0, 0, 0, 0], dtype=float), output=1
+            consumption=np.array([0, 0, 0, 0, 1, 0, 0, 0, 0, 0], dtype=float), output=1
         ),
     }
     if config.purify_building:
         # Purification Building: 120 inert -> 30 eff
         f["purify"] = Formula(
-            consumption=np.array([0, 0, 0, 0, 0, 0, -30, 120, 0], dtype=float),
+            consumption=np.array([0, 0, 0, 0, 0, 0, -30, 120, 0, 0], dtype=float),
             output=0,
         )
     if config.purify_node:
         # Test Area Purification Node: 30 sew -> 1 eff (max 12 multiples)
         f["purify_node"] = Formula(
-            consumption=np.array([0, 0, 0, 0, 0, 30, -1, 0, 0], dtype=float),
+            consumption=np.array([0, 0, 0, 0, 0, 30, -1, 0, 0, 0], dtype=float),
             output=0,
             limit=12,
         )
@@ -367,20 +414,22 @@ def build_formulas(config: WulingConfig) -> dict[str, Formula]:
         # equivalent cost (both 1:1 conversions upstream from raw Ore --
         # NOT dop; see module docstring).
         f["ferrium_component"] = Formula(
-            consumption=np.array([0, 60, 60, 0, 0, 0, 0, 0, 0], dtype=float), output=0
+            consumption=np.array([0, 60, 60, 0, 0, 0, 0, 0, 0, 0], dtype=float),
+            output=0,
         )
         # Xiranite Component: 60 Packed Origocrust + 60 Xiranite -> 6
         # Xiranite Component. Packed Origocrust needs 120 ori (not 60):
         # its chain has an extra 2:1 dilution step vs. plain Origocrust.
         f["xiranite_component"] = Formula(
-            consumption=np.array([60, 120, 0, 0, 0, 0, 0, 0, 0], dtype=float),
+            consumption=np.array([60, 120, 0, 0, 0, 0, 0, 0, 0, 0], dtype=float),
             output=0,
         )
         # Cuprium Component: 60 Cuprium Part + 60 Xiranite -> 6 Cuprium
         # Component. Cuprium Part collapsed to its Cuprium equivalent cost
         # (1:1 via Fitting Unit, same convention as cp_sell above).
         f["cuprium_component"] = Formula(
-            consumption=np.array([60, 0, 0, 0, 60, 0, 0, 0, 0], dtype=float), output=0
+            consumption=np.array([60, 0, 0, 0, 60, 0, 0, 0, 0, 0], dtype=float),
+            output=0,
         )
         # Hetonite Component: 12 Hetonite Part + 12 Heavy Xiranite -> 6
         # Hetonite Component (corrected from the raw recipe list's
@@ -388,24 +437,27 @@ def build_formulas(config: WulingConfig) -> dict[str, Formula]:
         # 2x hx's consumption vectors above (12 HP / 12 HX = 2 runs each
         # of those 6-unit-per-run formulas).
         f["hetonite_component"] = Formula(
-            consumption=np.array([120, 0, 60, 0, 480, -60, 60, 0, 0], dtype=float),
+            consumption=np.array([120, 0, 60, 0, 480, -60, 60, 0, 0, 0], dtype=float),
             output=0,
         )
         # Sandleaf Powder: Planting Unit (free) + Shredding Unit (30
         # Sandleaf -> 90 Sandleaf Powder) collapsed; consumes none of the
-        # tracked resources (matches "very cheap material" in the spec).
-        # limit is an arbitrary modest building-count stand-in, not a
-        # real constraint (this LP has no building-count dimension).
+        # tracked *base* resources (matches "very cheap material" in the
+        # spec) but produces the "sandleaf" resource dimension ori_to_dop
+        # needs. limit is a modest building-count stand-in sized to cover
+        # ori_to_dop's real floor demand plus the delivery-job target
+        # (see module docstring), not a real game constraint.
         f["sandleaf_powder"] = Formula(
-            consumption=np.array([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=float),
+            consumption=np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, -90], dtype=float),
             output=0,
-            limit=10,
+            limit=5,
         )
         # Thermal Bank: 7.5 Originium Ore -> 50 W (tracked via
         # POWER_YIELD, not $ output -- see module docstring). Raw Ore,
         # not dop.
         f["thermal_bank"] = Formula(
-            consumption=np.array([0, 7.5, 0, 0, 0, 0, 0, 0, 0], dtype=float), output=0
+            consumption=np.array([0, 7.5, 0, 0, 0, 0, 0, 0, 0, 0], dtype=float),
+            output=0,
         )
 
     for name, limit in config.formula_limits.items():
@@ -471,7 +523,7 @@ def preset_1p2e_equiv_1p2d() -> WulingConfig:
 def preset_1p2_full() -> WulingConfig:
     """1.2e model reproducing the older "1.2 full" base/max_forges."""
     return WulingConfig(
-        base_supply=(0, 480, 90, 180, 0, 0, 0, 0, 0),
+        base_supply=(0, 480, 90, 180, 0, 0, 0, 0, 0, 0),
         max_forges=8,
         purify_node=False,
     )

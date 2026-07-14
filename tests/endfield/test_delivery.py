@@ -17,10 +17,15 @@ def test_accumulation_rates_excludes_zero_slack_resources():
     assert rates == {}
 
 
-def test_accumulation_rates_includes_sandleaf_powder_scaled_by_good_yield():
+def test_accumulation_rates_includes_sandleaf_powder_surplus_via_slack():
+    """sandleaf_powder now has a real consumer (ori_to_dop), so it's no
+    longer in _STASHABLE_GOOD_FORMULAS -- its *net* surplus (not gross
+    production) comes through resource_slack instead, same as any other
+    solid (see delivery.py's module docstring)."""
     slack = np.zeros(len(RESOURCE_NAMES))
+    slack[RESOURCE_NAMES.index("sandleaf")] = 180.0
     rates = accumulation_rates({"sandleaf_powder": 2.0}, slack)
-    assert rates == {"Sandleaf Powder": 180.0}  # 2 multiples * 90 items/multiple
+    assert rates == {"Sandleaf Powder": 180.0}
 
 
 def test_accumulation_rates_excludes_thermal_bank():
@@ -46,8 +51,9 @@ def test_predict_delivery_selections_dominant_good_wins():
 
     slack = np.zeros(len(RESOURCE_NAMES))
     slack[RESOURCE_NAMES.index("ori")] = 1.0  # tiny, dominated within the window
+    slack[RESOURCE_NAMES.index("sandleaf")] = 900.0  # net sandleaf surplus, items/min
     tally = predict_delivery_selections(
-        {"sandleaf_powder": 10.0}, slack, DeliverySimConfig(simulation_days=10)
+        {}, slack, DeliverySimConfig(simulation_days=10)
     )
     assert tally["Sandleaf Powder"] > 0
     assert tally.get("Originium Ore", 0) == 0

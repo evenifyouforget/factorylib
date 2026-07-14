@@ -19,16 +19,22 @@ def test_replicates_1p2e_full():
     metatransfer is now 25 Dense Originium Powder directly instead of the
     old 50-ori-equivalent; both represent the identical real quantity).
 
-    The 6 trailing zeros are the secondary-goal formulas (Components,
-    Sandleaf Powder, Thermal Bank -- see wuling.py's module docstring):
-    they're zero-$ so the $-maximizing LP never uses them.
+    5 of the 6 trailing secondary-goal formulas (Components, Thermal Bank
+    -- see wuling.py's module docstring) are zero-$ dead ends the
+    $-maximizing LP never uses. sandleaf_powder is the exception: since
+    ori_to_dop now actually consumes 30 sandleaf/multiple, its rate is
+    pinned to at least ori_to_dop's floor demand (9 * 30 / 90 yield =
+    3.0), not fixed at 0 -- and, being $0 itself, is otherwise a genuine
+    LP degeneracy above that floor (HiGHS is free to pick anywhere up to
+    its limit=5), so it's checked as a range instead of an exact value.
     """
     result = search(preset_1p2e_full())
     assert result.result.status == "optimal"
     assert result.z == 10
-    assert np.allclose(result.metatransfer, [0, 0, 0, 0, 0, 0, 0, 0, 25])
+    assert np.allclose(result.metatransfer, [0, 0, 0, 0, 0, 0, 0, 0, 25, 0])
+    rates = result.result.formula_rates
     assert np.allclose(
-        result.result.formula_rates,
+        rates[:17],
         [
             8,
             393 / 73,
@@ -47,11 +53,12 @@ def test_replicates_1p2e_full():
             0,
             0,
             0,
-            0,
-            0,
         ],
     )
-    assert np.allclose(result.result.resource_slack, [0, 0, 0, 0, 0, 0, 0, 0, 0])
+    assert 3.0 - 1e-9 <= rates[17] <= 5.0 + 1e-9  # sandleaf_powder
+    assert rates[18] == 0  # thermal_bank
+    assert np.allclose(result.result.resource_slack[:9], [0, 0, 0, 0, 0, 0, 0, 0, 0])
+    assert result.result.resource_slack[9] >= -1e-9  # sandleaf surplus, if any
     assert np.isclose(result.result.dollar_output, 206735 / 146)
 
 
@@ -174,7 +181,7 @@ def test_metatransferred_dop_does_not_help_ferrium_component():
 
     f = build_formulas(WulingConfig())["ferrium_component"]
     forced = Formula(consumption=f.consumption, output=1.0, limit=f.limit)
-    dop_only_supply = np.array([0, 0, 90, 0, 0, 0, 0, 0, 300], dtype=float)
+    dop_only_supply = np.array([0, 0, 90, 0, 0, 0, 0, 0, 300, 0], dtype=float)
     result = maximize_dollar(dop_only_supply, [forced])
     assert result.formula_rates[0] == 0.0
 
@@ -187,7 +194,31 @@ def test_dop_metatransfer_still_reproduces_1p2e_full_dollar():
     assert np.isclose(result.result.dollar_output, 206735 / 146)
 
 
-def test_sandleaf_powder_consumes_nothing():
+def test_sandleaf_powder_produces_sandleaf_consumes_no_base_resource():
+    """Fixed from the earlier dead-end bug: Sandleaf Powder is a real
+    shared co-input to Grinding Unit recipes (ori_to_dop among them, see
+    module docstring), not an unconsumed dead end -- but it still doesn't
+    consume any of the *base* tracked resources itself."""
     f = build_formulas(WulingConfig())
-    assert np.allclose(f["sandleaf_powder"].consumption, 0.0)
+    sandleaf_index = 9
+    consumption = f["sandleaf_powder"].consumption
+    assert np.allclose(consumption[:sandleaf_index], 0.0)
+    assert consumption[sandleaf_index] == -90.0
     assert f["sandleaf_powder"].output == 0
+
+
+def test_ori_to_dop_consumes_sandleaf_when_secondary_goals_on():
+    sandleaf_index = 9
+    f = build_formulas(WulingConfig())
+    assert f["ori_to_dop"].consumption[sandleaf_index] == 30.0
+
+
+def test_ori_to_dop_ignores_sandleaf_when_secondary_goals_off():
+    """Disabling secondary_goals must never change $-optimal search()
+    results (see test_secondary_goals_never_change_1p2e_full_dollar_output):
+    since nothing produces "sandleaf" when secondary_goals is off,
+    ori_to_dop reverts to not tracking that co-input at all, exactly as
+    it did before this fix."""
+    sandleaf_index = 9
+    f = build_formulas(WulingConfig(secondary_goals=False))
+    assert f["ori_to_dop"].consumption[sandleaf_index] == 0.0

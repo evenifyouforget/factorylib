@@ -309,7 +309,7 @@ def _format_result(
             full_name = FORMULA_LABELS.get(name, name)
             note = (
                 " (net -- nothing else in this model consumes it)"
-                if name in SECONDARY_GOAL_FORMULA_NAMES
+                if name in SECONDARY_GOAL_FORMULA_NAMES and name != "sandleaf_powder"
                 else ""
             )
             item_yield = GOOD_YIELD.get(name)

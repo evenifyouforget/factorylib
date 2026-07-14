@@ -15,11 +15,13 @@ Two kinds of accumulator:
     but that's normally avoided in favor of purifying it back into more
     Xircon Effluent.
   - The secondary-goal goods that have no consumer at all in this model
-    (sandleaf_powder, and the four Gear Components -- see
-    factorylib.endfield.wuling's module docstring): their entire
-    production rate accumulates, since nothing else uses them.
-    thermal_bank is excluded: it produces W (power), not a stashable
-    material.
+    (the four Gear Components -- see factorylib.endfield.wuling's module
+    docstring): their entire production rate accumulates, since nothing
+    else uses them. thermal_bank is excluded: it produces W (power), not
+    a stashable material. sandleaf_powder is no longer in this bucket --
+    it's now a tracked resource dimension consumed by ori_to_dop, so its
+    *net* surplus (production minus what ori_to_dop actually uses) comes
+    through resource_slack instead, same as any other solid.
 """
 
 from __future__ import annotations
@@ -38,9 +40,10 @@ from factorylib.endfield.wuling import (
 _LIQUID_BELT_SPEED = 120.0
 
 # Secondary-goal formulas producing a stashable material with no
-# consumer in this model (thermal_bank produces W, not a material).
+# consumer in this model (thermal_bank produces W, not a material;
+# sandleaf_powder now has a real consumer, ori_to_dop, so its surplus
+# comes through resource_slack instead -- see module docstring).
 _STASHABLE_GOOD_FORMULAS = (
-    "sandleaf_powder",
     "ferrium_component",
     "xiranite_component",
     "cuprium_component",
