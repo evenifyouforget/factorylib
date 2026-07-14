@@ -15,7 +15,7 @@ Component consume Origocrust/Packed Origocrust -- a *different* refining
 chain off raw Ore that DOP cannot substitute for, and Thermal Bank burns
 raw Ore directly. Folding DOP into a single fungible "ori" pool made a
 metatransfer of DOP (see DEFAULT_METATRANSFERS) incorrectly spendable by
-the Component/Thermal Bank formulas too. ori_to_dop (2 ori -> 1 dop,
+the Component/Thermal Bank formulas too. ori_to_dop (60 ori -> 30 dop,
 lossless, matching the existing "collapsed" convention of not tracking
 the Sandleaf Powder co-input Grinding also needs) lets locally-mined Ore
 still fund SC/LC exactly as before; metatransferred dop bypasses that
@@ -283,11 +283,16 @@ def build_formulas(config: WulingConfig) -> dict[str, Formula]:
             consumption=np.array([30, 0, 0, 0, 0, 30, -30, -30, 0], dtype=float),
             output=0,
         ),
-        # 2 ori -> 1 dop (collapses Shredding + Grinding; the Sandleaf
-        # Powder co-input Grinding also needs isn't tracked, matching the
-        # pre-existing collapsed-formula convention elsewhere).
+        # 60 ori -> 30 dop (collapses 2 Shredding Units, each 30 ori -> 30
+        # Originium Powder, feeding 1 Grinding Unit, 60 Powder -> 30 DOP;
+        # the Sandleaf Powder co-input Grinding also needs isn't tracked,
+        # matching the pre-existing collapsed-formula convention
+        # elsewhere). Scaled to belt size (30/min) like every other
+        # formula's "1 multiple" -- the minimally-reduced 2:1 ratio alone
+        # ("2 ori -> 1 dop") made a formula's rate mean "2 ore/min" here
+        # instead of a recognizable physical unit everywhere else.
         "ori_to_dop": Formula(
-            consumption=np.array([0, 2, 0, 0, 0, 0, 0, 0, -1], dtype=float),
+            consumption=np.array([0, 60, 0, 0, 0, 0, 0, 0, -30], dtype=float),
             output=0,
         ),
         # SC: (60 eff + 30 ferr -> 30 Xircon + 30 sew)

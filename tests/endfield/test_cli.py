@@ -20,6 +20,32 @@ def test_main_with_limit_flag(capsys):
     assert "205129/146" in out
 
 
+def test_main_prints_forge_allocation(capsys):
+    """Spells out what z means: how many forges feed Xiranite supply vs.
+    cap Heavy Xiranite, instead of a bare "z=10"."""
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "10 -> Xiranite supply" in out
+    assert "2 -> Heavy Xiranite capacity" in out
+
+
+def test_main_prints_material_balance_with_zero_net_for_saturated_resources(capsys):
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Material balance" in out
+    assert "net: 0/min" in out  # 1.2e full is fully resource-saturated
+
+
+def test_main_material_balance_shows_sources_and_sinks(capsys):
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "from base supply (mining/Forge of the Sky/Metatransfer)" in out
+    assert "to Cuprium Ore Refining" in out
+
+
 def test_main_prints_metatransfer_as_named_item(capsys):
     """The default 1.2e-full metatransfer is 25 Dense Originium Powder;
     the CLI should say so, not print a raw resource-equivalent vector."""
@@ -175,6 +201,21 @@ def test_main_stock_bill_cap_and_power_target_flags_accepted(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "Most fit solution found" in out
+
+
+def test_main_random_seed_flag_prints_the_seed_used(capsys):
+    rc = main(["-R", "-i", "50"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "using random refine seed" in out
+    assert "pass -s" in out
+
+
+def test_main_short_flags_match_long_flags(capsys):
+    rc = main(["-l", "ya=0"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "205129/146" in out
 
 
 def test_bad_purify_flags_mutually_exclusive():

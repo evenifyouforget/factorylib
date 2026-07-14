@@ -3,8 +3,17 @@ which materials would actually pile up, unconsumed, in the depot, and
 which one the delivery job's auto-select would pick over time.
 
 Two kinds of accumulator:
-  - Base resources with leftover slack (produced but not consumed by any
-    formula in the plan) -- exactly what resource_slack already tracks.
+  - Base *solid* resources with leftover slack (produced but not consumed
+    by any formula in the plan) -- exactly what resource_slack already
+    tracks. Liquids (Sewage, Xircon Effluent, Inert Xircon Effluent --
+    see RESOURCE_BELT_SPEED) are excluded: the depot cannot store
+    liquids at all. Excess liquid supply doesn't accumulate anywhere --
+    it just causes backpressure (the producing formula's actual
+    achieved rate would throttle to match demand, something this
+    steady-state LP doesn't model). Xircon Effluent specifically has no
+    disposal at all; Inert Xircon Effluent can be discarded like Sewage,
+    but that's normally avoided in favor of purifying it back into more
+    Xircon Effluent.
   - The secondary-goal goods that have no consumer at all in this model
     (sandleaf_powder, and the four Gear Components -- see
     factorylib.endfield.wuling's module docstring): their entire
@@ -21,9 +30,12 @@ from factorylib.delivery import DeliverySimConfig, simulate_delivery_selections
 from factorylib.endfield.wuling import (
     FORMULA_LABELS,
     GOOD_YIELD,
+    RESOURCE_BELT_SPEED,
     RESOURCE_LABELS,
     RESOURCE_NAMES,
 )
+
+_LIQUID_BELT_SPEED = 120.0
 
 # Secondary-goal formulas producing a stashable material with no
 # consumer in this model (thermal_bank produces W, not a material).
@@ -40,12 +52,14 @@ def accumulation_rates(
     rates_by_name: dict[str, float], resource_slack: np.ndarray
 ) -> dict[str, float]:
     """Every material that would plausibly pile up, unconsumed, in the
-    depot, keyed by full label: base resources with leftover slack, plus
-    any of the stashable secondary-goal goods (see module docstring)."""
+    depot, keyed by full label: base *solid* resources with leftover
+    slack, plus any of the stashable secondary-goal goods (see module
+    docstring). Liquids are never candidates -- the depot can't store
+    them."""
     rates: dict[str, float] = {
         RESOURCE_LABELS.get(name, name): float(slack)
         for name, slack in zip(RESOURCE_NAMES, resource_slack)
-        if slack > 1e-9
+        if slack > 1e-9 and RESOURCE_BELT_SPEED.get(name) != _LIQUID_BELT_SPEED
     }
     for name in _STASHABLE_GOOD_FORMULAS:
         rate = rates_by_name.get(name, 0.0) * GOOD_YIELD.get(name, 1.0)
