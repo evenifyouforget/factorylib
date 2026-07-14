@@ -12,6 +12,7 @@ from factorylib.endfield.goals import WulingGoals
 from factorylib.endfield.refine import refine
 from factorylib.endfield.wuling import (
     FORMULA_LABELS,
+    METATRANSFER_ITEMS,
     RESOURCE_LABELS,
     RESOURCE_NAMES,
     SECONDARY_GOAL_FORMULA_NAMES,
@@ -156,6 +157,22 @@ def _fmt(x: float) -> str:
     return str(snap_value(x, warn=False))
 
 
+def _format_metatransfer(mt: np.ndarray) -> str:
+    """Metatransfer vectors are expressed in this module's internal
+    resource-equivalent units, not the item you actually select in the
+    game's Metatransfer menu (e.g. a nonzero "dop" entry literally means
+    "select Dense Originium Powder") -- METATRANSFER_ITEMS names that
+    item directly so the raw vector doesn't have to be reverse-engineered
+    by hand."""
+    parts = []
+    for name, amount in zip(RESOURCE_NAMES, mt):
+        if abs(amount) < 1e-9:
+            continue
+        item_name = METATRANSFER_ITEMS.get(name, RESOURCE_LABELS.get(name, name))
+        parts.append(f"{_fmt(amount)} {item_name}")
+    return "select " + ", ".join(parts) if parts else "none"
+
+
 def _format_result(label: str, result, formula_names: list[str]) -> str:
     lines = [
         f"{label}: dollar={_fmt(result.dollar_output)} $/min "
@@ -200,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
 
     best = search(config)
     print(_format_result("Optimal solution", best.result, best.formula_names))
-    print(f"    z={best.z}, metatransfer={best.metatransfer.tolist()}")
+    print(f"    z={best.z}, metatransfer: {_format_metatransfer(best.metatransfer)}")
 
     formulas = build_formulas(config)
     if not config.fix_hx_limit:
@@ -237,7 +254,9 @@ def main(argv: list[str] | None = None) -> int:
         for result, z, mt in discrete_ties[: max(args.max_solutions - 1, 0)]:
             print(
                 _format_result(
-                    f"  z={z}, metatransfer={mt.tolist()}", result, best.formula_names
+                    f"  z={z}, metatransfer: {_format_metatransfer(mt)}",
+                    result,
+                    best.formula_names,
                 )
             )
 

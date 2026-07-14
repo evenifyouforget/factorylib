@@ -36,9 +36,14 @@ docstring for exactly what's covered and what's still missing, e.g.
 Cryston/Amethyst Components and battery-diverted power). Since Formula
 carries only a $ output, power is tracked separately via
 factorylib.endfield.wuling.POWER_YIELD; plan_from_search_result() reads
-it off directly. good_rates is just every formula's rate by name (the
-same dict as multiples) -- WulingGoals.delivery_goods/gear_priority key
-into whichever of those names are actually modeled.
+it off directly. good_rates is every formula's rate by name, converted
+from raw recipe multiples to real items/min via
+factorylib.endfield.wuling.GOOD_YIELD where applicable (e.g.
+sandleaf_powder's rate is multiples of "-> 90 Sandleaf Powder", so 1.0
+multiples/min means 90 items/min) -- WulingGoals.delivery_goods and
+gear_min_target are both stated in items/min, matching the spec's own
+units ("0.5/min of Cuprium Component"), so this conversion has to
+happen before the comparison, not after.
 
 Complexity is priced per physical resource *flow*, not per raw formula
 rate (see factorylib_tmp_physical_factory_construction.md): belts run at
@@ -70,6 +75,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from factorylib.endfield.wuling import (
+    GOOD_YIELD,
     POWER_YIELD,
     RESOURCE_BELT_SPEED,
     RESOURCE_NAMES,
@@ -156,11 +162,11 @@ class ProductionPlan:
         dollar_rate: $/min (Wuling Stock Bill sell rate).
         power_rate: W worth of power produced.
         good_rates: named production rates for delivery/gear-relevant
-            materials, keyed to match WulingGoals.delivery_goods and
-            gear_priority. In practice this is just every formula's rate
-            by name (same as multiples) -- goods not actually modeled in
-            the current recipe set simply aren't present as keys, and
-            fitness() treats a missing key as rate 0.0.
+            materials, in items/min (see item_rates()), keyed to match
+            WulingGoals.delivery_goods and gear_priority. Goods not
+            actually modeled in the current recipe set simply aren't
+            present as keys, and fitness() treats a missing key as rate
+            0.0.
         multiples: every formula's rate (by name), used for the
             simplicity/denominator penalty.
         consumption: each formula's resource-consumption vector (by
@@ -179,14 +185,24 @@ class ProductionPlan:
     consumption: dict[str, np.ndarray] = field(default_factory=dict)
 
 
+def item_rates(multiples: dict[str, float]) -> dict[str, float]:
+    """Convert each formula's raw rate (recipe multiples/min) to a real
+    item rate (items/min) via GOOD_YIELD, for formulas that produce a
+    named, stashable good at $0 output. Formulas with no GOOD_YIELD entry
+    keep their raw rate unchanged (harmless: WulingGoals only looks up
+    names it actually cares about)."""
+    return {name: rate * GOOD_YIELD.get(name, 1.0) for name, rate in multiples.items()}
+
+
 def plan_from_search_result(
     result: SearchResult, config: WulingConfig
 ) -> ProductionPlan:
     """Build a ProductionPlan from a factorylib.endfield.wuling.search()
     result and the WulingConfig it was produced from (needed to rebuild
     each formula's consumption vector for belt-aware complexity pricing).
-    power_rate is computed from POWER_YIELD; good_rates is every formula's
-    rate by name (see ProductionPlan.good_rates)."""
+    power_rate is computed from POWER_YIELD; good_rates is every
+    formula's rate by name, in items/min (see ProductionPlan.good_rates
+    and item_rates())."""
     multiples = dict(zip(result.formula_names, result.result.formula_rates))
     power_rate = sum(
         rate * POWER_YIELD.get(name, 0.0) for name, rate in multiples.items()
@@ -202,7 +218,7 @@ def plan_from_search_result(
     return ProductionPlan(
         dollar_rate=result.result.dollar_output,
         power_rate=power_rate,
-        good_rates=multiples,
+        good_rates=item_rates(multiples),
         multiples=multiples,
         consumption=consumption,
     )

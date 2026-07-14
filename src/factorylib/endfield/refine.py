@@ -48,8 +48,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from factorylib.endfield.goals import ProductionPlan, WulingGoals, fitness
+from factorylib.endfield.goals import ProductionPlan, WulingGoals, fitness, item_rates
 from factorylib.endfield.wuling import (
+    POWER_YIELD,
     RESOURCE_NAMES,
     XI_PER_FORGE,
     SearchResult,
@@ -86,9 +87,13 @@ def _plan_from_rates(
     consumption: dict[str, np.ndarray],
 ) -> ProductionPlan:
     multiples = dict(zip(formula_names, rates))
+    power_rate = sum(
+        rate * POWER_YIELD.get(name, 0.0) for name, rate in multiples.items()
+    )
     return ProductionPlan(
         dollar_rate=float(np.asarray(rates) @ original_outputs),
-        good_rates=multiples,
+        power_rate=power_rate,
+        good_rates=item_rates(multiples),
         multiples=multiples,
         consumption=consumption,
     )

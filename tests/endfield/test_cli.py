@@ -20,13 +20,22 @@ def test_main_with_limit_flag(capsys):
     assert "205129/146" in out
 
 
+def test_main_prints_metatransfer_as_named_item(capsys):
+    """The default 1.2e-full metatransfer is 25 Dense Originium Powder;
+    the CLI should say so, not print a raw resource-equivalent vector."""
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "select 25 Dense Originium Powder" in out
+
+
 def test_main_prints_alternatives_section_when_tied(capsys):
     rc = main(
         [
             "--max-forges",
             "8",
             "--base-supply",
-            "0,480,90,180,0,0,0,0",
+            "0,480,90,180,0,0,0,0,0",
             "--no-purify-node",
             "--formula-output",
             "hp=288",
@@ -61,7 +70,7 @@ def test_main_prints_discrete_branch_ties(capsys):
             "--max-forges",
             "8",
             "--base-supply",
-            "0,480,90,180,0,0,0,0",
+            "0,480,90,180,0,0,0,0,0",
             "--no-purify-node",
             "--formula-output",
             "hx=114",
@@ -79,9 +88,9 @@ def test_main_explicit_purify_building_and_metatransfer_flags(capsys):
         [
             "--purify-building",
             "--metatransfer",
-            "0,50,0,0,0,0,0,0",
+            "0,0,0,0,0,0,0,0,25",  # 25 Dense Originium Powder
             "--metatransfer",
-            "0,0,25,0,0,0,0,0",
+            "0,0,25,0,0,0,0,0,0",  # 25 Ferrium Ore
         ]
     )
     out = capsys.readouterr().out
