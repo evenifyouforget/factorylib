@@ -17,13 +17,14 @@ def test_refine_sa_improves_on_lp_optimal_fitness():
     """Regression of the empirical backend comparison in refine.py's
     module docstring: on 1.2e full, sa should find a higher-fitness plan
     than the raw LP optimum by trading some $ for simpler fractions."""
-    base = search(WulingConfig())
+    config = WulingConfig()
+    base = search(config)
     goals = WulingGoals()
-    baseline_fitness = fitness(plan_from_search_result(base), goals)
+    baseline_fitness = fitness(plan_from_search_result(base, config), goals)
 
     result = refine(
         base,
-        WulingConfig(),
+        config,
         goals,
         SearchConfig(iterations=3000, seed=42),
         backend="sa",
@@ -67,19 +68,33 @@ def test_refine_scipy_backend_never_beats_sa_on_1p2e_full():
     """Documents why "sa" is the default (see refine.py's module
     docstring): scipy's dual_annealing doesn't improve on the LP optimum
     on this problem, across several seeds."""
-    base = search(WulingConfig())
+    config = WulingConfig()
+    base = search(config)
     goals = WulingGoals()
-    baseline_fitness = fitness(plan_from_search_result(base), goals)
+    baseline_fitness = fitness(plan_from_search_result(base, config), goals)
 
     for seed in range(3):
         result = refine(
             base,
-            WulingConfig(),
+            config,
             goals,
             SearchConfig(iterations=500, seed=seed),
             backend="scipy",
         )
         assert result.fitness <= baseline_fitness + 1e-6
+
+
+def test_refine_headroom_lost_is_list_of_valid_resource_names():
+    from factorylib.endfield.wuling import RESOURCE_NAMES
+
+    config = WulingConfig()
+    base = search(config)
+    goals = WulingGoals()
+    result = refine(
+        base, config, goals, SearchConfig(iterations=1000, seed=1), backend="sa"
+    )
+    assert isinstance(result.headroom_lost, list)
+    assert all(name in RESOURCE_NAMES for name in result.headroom_lost)
 
 
 def test_refine_dollar_output_matches_rates_dot_outputs():

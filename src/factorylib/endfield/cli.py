@@ -261,5 +261,14 @@ def main(argv: list[str] | None = None) -> int:
         f"backend={args.refine_backend}):"
     )
     print(_format_result("  Refined solution", refined_result, refined.formula_names))
+    if refined.headroom_lost:
+        lost = ", ".join(RESOURCE_LABELS.get(n, n) for n in refined.headroom_lost)
+        print(
+            f"  Warning: this solution fully saturates {lost}, which had spare "
+            "capacity in the optimal solution above. This only checks the "
+            "modeled resource balance, not physical topology (splitter "
+            "wiring, priority overflow, backpressure) -- see "
+            "factorylib.endfield.goals's module docstring."
+        )
 
     return 0

@@ -69,6 +69,22 @@ SECONDARY_GOAL_FORMULA_NAMES = (
     "thermal_bank",
 )
 
+# Belts (solids) run at 30 items/min; pipes (liquids) run at 120 items/min
+# (see factorylib_tmp_physical_factory_construction.md). Used to price a
+# resource flow's physical complexity in terms of "how many belts/pipes"
+# it represents, rather than the abstract recipe-multiple fraction alone
+# -- see factorylib.endfield.goals.fitness.
+RESOURCE_BELT_SPEED = {
+    "xi": 30.0,
+    "ori": 30.0,
+    "ferr": 30.0,
+    "cup_ore": 30.0,
+    "cup": 30.0,
+    "sew": 120.0,
+    "eff": 120.0,
+    "inert": 120.0,
+}
+
 RESOURCE_NAMES = ["xi", "ori", "ferr", "cup_ore", "cup", "sew", "eff", "inert"]
 FORMULA_NAMES = [
     "cup_conv",

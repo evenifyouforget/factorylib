@@ -1,6 +1,9 @@
+from unittest.mock import patch
+
 import pytest
 
 from factorylib.endfield.cli import main
+from factorylib.endfield.refine import RefinedResult
 
 
 def test_main_default_prints_1p2e_full_dollar(capsys):
@@ -92,6 +95,29 @@ def test_main_prints_refined_solution_section(capsys):
     assert rc == 0
     assert "Most fit solution found" in out
     assert "Refined solution" in out
+
+
+def test_main_prints_headroom_warning_when_present(capsys):
+    """Forcing headroom_lost via a mock: real scenarios where a move
+    happens to fully saturate a previously-slack resource are rare (see
+    factorylib.endfield.refine's own tests), so this exercises the CLI's
+    print path directly rather than hunting for one."""
+
+    def fake_refine(base, config, goals, search_config, *, backend):
+        return RefinedResult(
+            rates=base.result.formula_rates,
+            dollar_output=base.result.dollar_output,
+            fitness=0.0,
+            formula_names=base.formula_names,
+            headroom_lost=["sew"],
+        )
+
+    with patch("factorylib.endfield.cli.refine", side_effect=fake_refine):
+        rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Warning" in out
+    assert "Sewage" in out
 
 
 def test_main_refine_backend_scipy_runs(capsys):

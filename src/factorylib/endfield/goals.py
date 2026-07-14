@@ -39,6 +39,27 @@ factorylib.endfield.wuling.POWER_YIELD; plan_from_search_result() reads
 it off directly. good_rates is just every formula's rate by name (the
 same dict as multiples) -- WulingGoals.delivery_goods/gear_priority key
 into whichever of those names are actually modeled.
+
+Complexity is priced per physical resource *flow*, not per raw formula
+rate (see factorylib_tmp_physical_factory_construction.md): belts run at
+30 items/min, pipes at 120 items/min, and a formula's own "multiples"
+fraction can look arbitrarily complex while every resource flow it
+induces still lands on a whole belt (e.g. a recipe needing 120 items/run
+of some input, run at rate 1/4, draws exactly 30 items/min of it -- one
+full belt, zero splitting -- even though 1/4 alone might look like it
+needs a 4-way split). Pricing the belt-fraction of each flow instead of
+the raw rate gets this right in both directions: a "nice-looking" rate
+can still be penalized if it happens to induce an awkward belt-split on
+some resource. This requires knowing each formula's consumption vector,
+not just its rate -- see ProductionPlan.consumption.
+
+Note this only proves LP-level feasibility (every accepted plan
+satisfies consumption @ rates <= supply for every tracked resource,
+including cyclic ones like sewage/effluent -- see factorylib.search's
+moves). It says nothing about physical topology or priority-splitter
+dynamics (transient clogging, depot turn-taking, backpressure-driven
+"auto-limiting" where a ratio-limited co-reactant caps the achieved flow
+below nominal belt capacity) -- those aren't modeled here at all.
 """
 
 from __future__ import annotations
@@ -46,7 +67,16 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from factorylib.endfield.wuling import POWER_YIELD, SearchResult
+import numpy as np
+
+from factorylib.endfield.wuling import (
+    POWER_YIELD,
+    RESOURCE_BELT_SPEED,
+    RESOURCE_NAMES,
+    SearchResult,
+    WulingConfig,
+    build_formulas,
+)
 from factorylib.simplicity import fraction_complexity
 
 
@@ -133,27 +163,48 @@ class ProductionPlan:
             fitness() treats a missing key as rate 0.0.
         multiples: every formula's rate (by name), used for the
             simplicity/denominator penalty.
+        consumption: each formula's resource-consumption vector (by
+            name), used to price complexity per physical belt/pipe flow
+            instead of per raw rate (see module docstring). A formula
+            missing from this dict falls back to pricing its raw rate
+            directly, so callers that only care about multiples-based
+            complexity (e.g. synthetic test plans) don't need to supply
+            it.
     """
 
     dollar_rate: float
     power_rate: float = 0.0
     good_rates: dict[str, float] = field(default_factory=dict)
     multiples: dict[str, float] = field(default_factory=dict)
+    consumption: dict[str, np.ndarray] = field(default_factory=dict)
 
 
-def plan_from_search_result(result: SearchResult) -> ProductionPlan:
+def plan_from_search_result(
+    result: SearchResult, config: WulingConfig
+) -> ProductionPlan:
     """Build a ProductionPlan from a factorylib.endfield.wuling.search()
-    result. power_rate is computed from POWER_YIELD; good_rates is every
-    formula's rate by name (see ProductionPlan.good_rates)."""
+    result and the WulingConfig it was produced from (needed to rebuild
+    each formula's consumption vector for belt-aware complexity pricing).
+    power_rate is computed from POWER_YIELD; good_rates is every formula's
+    rate by name (see ProductionPlan.good_rates)."""
     multiples = dict(zip(result.formula_names, result.result.formula_rates))
     power_rate = sum(
         rate * POWER_YIELD.get(name, 0.0) for name, rate in multiples.items()
     )
+    formulas_dict = build_formulas(config)
+    if not config.fix_hx_limit and "hx" in formulas_dict:
+        formulas_dict["hx"].limit = config.max_forges - result.z
+    consumption = {
+        name: formulas_dict[name].consumption
+        for name in result.formula_names
+        if name in formulas_dict
+    }
     return ProductionPlan(
         dollar_rate=result.result.dollar_output,
         power_rate=power_rate,
         good_rates=multiples,
         multiples=multiples,
+        consumption=consumption,
     )
 
 
@@ -226,9 +277,32 @@ def fitness(plan: ProductionPlan, goals: WulingGoals) -> float:
             excess_gain=weight * 0.1,
         )
 
-    complexity_penalty = sum(
-        fraction_complexity(rate, goals.max_denom) for rate in plan.multiples.values()
-    )
-    score -= goals.complexity_weight * complexity_penalty
+    score -= goals.complexity_weight * _plan_complexity(plan, goals.max_denom)
 
     return score
+
+
+def _plan_complexity(plan: ProductionPlan, max_denom: int) -> float:
+    """Total complexity penalty for a plan: for each formula with a known
+    consumption vector, price every nonzero resource flow it induces as a
+    belt/pipe-fraction (see module docstring); formulas with no known
+    consumption vector fall back to pricing their raw rate directly.
+    """
+    total = 0.0
+    for name, rate in plan.multiples.items():
+        if abs(rate) < 1e-9:
+            continue
+        consumption = plan.consumption.get(name)
+        if consumption is None:
+            total += fraction_complexity(rate, max_denom)
+            continue
+        for resource_name, coeff in zip(RESOURCE_NAMES, consumption):
+            if abs(coeff) < 1e-12:
+                continue
+            belt_speed = RESOURCE_BELT_SPEED.get(resource_name)
+            if not belt_speed:
+                total += fraction_complexity(rate * coeff, max_denom)
+                continue
+            belts = rate * coeff / belt_speed
+            total += fraction_complexity(belts, max_denom)
+    return total

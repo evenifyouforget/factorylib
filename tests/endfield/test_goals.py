@@ -1,6 +1,9 @@
+import numpy as np
+
 from factorylib.endfield.goals import (
     ProductionPlan,
     WulingGoals,
+    _plan_complexity,
     fitness,
     plan_from_search_result,
 )
@@ -117,6 +120,41 @@ def test_simpler_multiples_score_higher_than_complex_ones():
     assert simple > complex_
 
 
+def test_whole_belt_flow_is_free_even_with_awkward_multiples_fraction():
+    """A rate whose "multiples" fraction looks complex (1/4) can still be
+    physically trivial if the resource flow it induces lands on exactly
+    one whole belt (30 items/min): e.g. a formula consuming 120/run of
+    some solid, run at rate 1/4, draws exactly 30/min -- one full belt,
+    no splitting at all. This is the concrete case raised in
+    factorylib_tmp_physical_factory_construction.md (adding one belt of
+    Dense Originium Powder to an SC Wuling Battery-like recipe)."""
+    whole_belt = ProductionPlan(
+        dollar_rate=0.0,
+        multiples={"sc": 0.25},
+        consumption={"sc": np.array([0, 120, 0, 0, 0, 0, 0, 0], dtype=float)},
+    )
+    assert _plan_complexity(whole_belt, 1000) == 0.0
+
+
+def test_awkward_belt_flow_is_still_priced_even_with_simple_multiples():
+    """The converse: the same "1/4 multiple" rate should still be priced
+    if the resulting flow does NOT land on a whole belt (here 30/run ->
+    7.5/min = 1/4 belt)."""
+    awkward = ProductionPlan(
+        dollar_rate=0.0,
+        multiples={"sc": 0.25},
+        consumption={"sc": np.array([0, 30, 0, 0, 0, 0, 0, 0], dtype=float)},
+    )
+    assert _plan_complexity(awkward, 1000) > 0.0
+
+
+def test_missing_consumption_falls_back_to_raw_rate_pricing():
+    from factorylib.simplicity import fraction_complexity
+
+    plan = ProductionPlan(dollar_rate=0.0, multiples={"sc": 19 / 96})
+    assert _plan_complexity(plan, 1000) == fraction_complexity(19 / 96, 1000)
+
+
 def test_default_gear_priority_and_delivery_goods_are_populated():
     """Now that Components/Sandleaf Powder are modeled (see
     factorylib.endfield.wuling), the defaults should reference them
@@ -144,8 +182,9 @@ def test_default_gear_priority_penalizes_missing_components():
 
 
 def test_plan_from_search_result_uses_real_dollar_and_multiples():
-    result = search(WulingConfig())
-    plan = plan_from_search_result(result)
+    config = WulingConfig()
+    result = search(config)
+    plan = plan_from_search_result(result, config)
     expected_multiples = dict(zip(result.formula_names, result.result.formula_rates))
     assert plan.dollar_rate == result.result.dollar_output
     assert plan.multiples == expected_multiples

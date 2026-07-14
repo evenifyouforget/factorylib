@@ -8,6 +8,8 @@ from factorylib.search import (
     SearchConfig,
     _allocate_slack_move,
     _round_down_move,
+    _round_up_move,
+    headroom_loss,
     scipy_dual_annealing,
     search,
     simulated_annealing,
@@ -28,6 +30,57 @@ def test_round_down_move_returns_none_when_all_rates_zero():
     rng = __import__("random").Random(0)
     rates = np.array([0.0, 0.0])
     assert _round_down_move(rates, (1, 2, 3), rng) is None
+
+
+def test_round_up_move_increases_rate_and_simplifies_denominator():
+    formulas = [Formula(consumption=np.array([1.0]), output=1.0)]
+    consumption = np.stack([f.consumption for f in formulas], axis=1)
+    supply = np.array([1.0])
+    rates = np.array([19 / 96])
+    rng = __import__("random").Random(0)
+    new_rates = _round_up_move(
+        rates, formulas, consumption, supply, (1, 2, 3, 4, 6, 8, 12, 24, 48), rng
+    )
+    assert new_rates is not None
+    assert new_rates[0] >= rates[0]
+    new_denom = Fraction(new_rates[0]).limit_denominator(1000).denominator
+    assert new_denom < 96
+
+
+def test_round_up_move_respects_resource_slack():
+    formulas = [Formula(consumption=np.array([1.0]), output=1.0)]
+    consumption = np.stack([f.consumption for f in formulas], axis=1)
+    supply = np.array([1.0])  # already fully saturated at rate=1.0
+    rates = np.array([1.0])
+    rng = __import__("random").Random(0)
+    assert _round_up_move(rates, formulas, consumption, supply, (1, 2, 3), rng) is None
+
+
+def test_round_up_move_respects_formula_limit():
+    formulas = [Formula(consumption=np.array([0.0]), output=1.0, limit=0.3)]
+    consumption = np.stack([f.consumption for f in formulas], axis=1)
+    supply = np.array([100.0])
+    rates = np.array([0.3])
+    rng = __import__("random").Random(0)
+    assert (
+        _round_up_move(rates, formulas, consumption, supply, (1, 2, 3, 4), rng) is None
+    )
+
+
+def test_headroom_loss_flags_newly_saturated_resources():
+    supply = np.array([10.0, 10.0])
+    consumption = np.array([[1.0, 0.0], [0.0, 1.0]])
+    before = np.array([5.0, 5.0])  # both resources have slack
+    after = np.array([10.0, 5.0])  # resource 0 now fully saturated
+    assert headroom_loss(supply, consumption, before, after) == [0]
+
+
+def test_headroom_loss_empty_when_nothing_newly_saturated():
+    supply = np.array([10.0])
+    consumption = np.array([[1.0]])
+    before = np.array([10.0])  # already saturated before
+    after = np.array([10.0])
+    assert headroom_loss(supply, consumption, before, after) == []
 
 
 def test_allocate_slack_move_respects_resource_constraint():

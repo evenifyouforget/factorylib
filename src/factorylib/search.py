@@ -3,11 +3,28 @@
 Starting from an LP-optimal solution (which maximizes raw $ only), search
 nearby plans for better *fitness* -- a different, generally nonconvex
 objective (see factorylib.endfield.goals.fitness) that also rewards simple
-fractions and secondary goals. Two moves, as suggested by the project spec:
+fractions and secondary goals. Three moves:
 
   - round_down: replace one formula's rate with a simpler (smaller-
     denominator) fraction no larger than its current value, freeing up
     the resources it no longer consumes.
+  - round_up: replace one formula's rate with a simpler (smaller-
+    denominator) fraction no smaller than its current value ("virtual
+    limits" in factorylib_tmp_physical_factory_construction.md -- e.g.
+    rounding up to consume one more whole belt of some input, since the
+    extra output is often harmless). Only proposed when the extra
+    consumption fits within currently unused slack (see
+    _round_up_move) -- this is exactly what's provably safe here: every
+    accepted rates vector satisfies consumption @ rates <= supply for
+    every tracked resource, including cyclic ones (sewage/effluent are
+    just resource dimensions, not special-cased). This does NOT prove
+    physical-topology safety (specific splitter wiring, priority-overflow
+    routing, depot turn-taking, or backpressure-driven "auto-limiting"
+    where a ratio-limited co-reactant caps achieved flow below nominal
+    belt capacity) -- none of that is modeled here. See headroom_loss()
+    for a practical proxy for one specific risk the physical-construction
+    notes raise: a move that fully saturates a resource which used to
+    have spare capacity.
   - allocate_slack: given whatever resources are currently unused (either
     from the start, or freed by a round_down move), increase some
     formula's rate -- new or already active -- by as much as the
@@ -71,12 +88,42 @@ class SearchOutcome:
         fitness: fitness_fn(rates) for that vector.
         accepted_moves: number of proposed moves accepted (diagnostic).
         proposed_moves: number of moves proposed in total (diagnostic).
+        headroom_lost: resource indices that had spare capacity under
+            initial_rates but are fully saturated under rates -- see
+            headroom_loss(). A diagnostic, not a rejection.
     """
 
     rates: np.ndarray
     fitness: float
     accepted_moves: int
     proposed_moves: int
+    headroom_lost: list[int]
+
+
+def headroom_loss(
+    supply: np.ndarray,
+    consumption: np.ndarray,
+    before_rates: np.ndarray,
+    after_rates: np.ndarray,
+    tol: float = 1e-9,
+) -> list[int]:
+    """Resource indices that had spare capacity (slack > tol) under
+    before_rates but are fully saturated (slack <= tol) under after_rates.
+
+    A practical proxy for one specific risk
+    factorylib_tmp_physical_factory_construction.md raises: "clogging a
+    sewage loop that would have had excess capacity otherwise." This is
+    diagnostic, not a rejection -- many economically-good moves
+    legitimately saturate a resource that has to be fully used to be
+    worthwhile; it does not by itself indicate a problem. It's also not a
+    physical-topology check (see module docstring): it only reports on
+    the linear resource balance this model tracks.
+    """
+    before_slack = supply - consumption @ before_rates
+    after_slack = supply - consumption @ after_rates
+    return [
+        k for k in range(len(supply)) if before_slack[k] > tol and after_slack[k] <= tol
+    ]
 
 
 def _round_down_move(
@@ -95,6 +142,48 @@ def _round_down_move(
     new_r = math.floor(r * d) / d
     if new_r >= r:
         return None
+    new_rates = rates.copy()
+    new_rates[i] = new_r
+    return new_rates
+
+
+def _round_up_move(
+    rates: np.ndarray,
+    formulas: list[Formula],
+    consumption: np.ndarray,
+    supply: np.ndarray,
+    denominators: tuple[int, ...],
+    rng: random.Random,
+) -> np.ndarray | None:
+    """Round a nonzero rate UP to a simpler nearby fraction ("virtual
+    limits" -- see module docstring), if the extra consumption fits
+    within currently unused slack. Uses the exact same feasibility bound
+    as _allocate_slack_move, so this is provably safe with respect to the
+    linear resource balance (see headroom_loss() for what it does NOT
+    prove)."""
+    nonzero = [i for i, r in enumerate(rates) if r > 1e-9]
+    if not nonzero:
+        return None
+    i = rng.choice(nonzero)
+    r = float(rates[i])
+    current_denom = Fraction(r).limit_denominator(1000).denominator
+    candidates = [d for d in denominators if d < current_denom]
+    if not candidates:
+        return None
+    d = rng.choice(candidates)
+    new_r = math.ceil(r * d) / d
+    if new_r <= r:
+        return None
+    delta = new_r - r
+
+    if delta > formulas[i].limit - r + 1e-9:
+        return None
+    remaining_slack = supply - consumption @ rates
+    col = consumption[:, i]
+    for k in range(len(col)):
+        if col[k] > 1e-12 and delta * col[k] > remaining_slack[k] + 1e-9:
+            return None
+
     new_rates = rates.copy()
     new_rates[i] = new_r
     return new_rates
@@ -136,16 +225,23 @@ def simulated_annealing(
     config = config or SearchConfig()
     rng = random.Random(config.seed)
     consumption = np.stack([f.consumption for f in formulas], axis=1)
+    supply = np.asarray(supply, dtype=float)
 
-    current = np.asarray(initial_rates, dtype=float).copy()
+    initial = np.asarray(initial_rates, dtype=float).copy()
+    current = initial.copy()
     current_fitness = fitness_fn(current)
     best, best_fitness = current.copy(), current_fitness
 
     temperature = config.initial_temperature
     accepted = 0
     for _ in range(config.iterations):
-        if rng.random() < 0.5:
+        move = rng.random()
+        if move < 1 / 3:
             proposal = _round_down_move(current, config.denominators, rng)
+        elif move < 2 / 3:
+            proposal = _round_up_move(
+                current, formulas, consumption, supply, config.denominators, rng
+            )
         else:
             proposal = _allocate_slack_move(current, formulas, consumption, supply, rng)
 
@@ -165,6 +261,7 @@ def simulated_annealing(
         fitness=best_fitness,
         accepted_moves=accepted,
         proposed_moves=config.iterations,
+        headroom_lost=headroom_loss(supply, consumption, initial, best),
     )
 
 
@@ -217,11 +314,13 @@ def scipy_dual_annealing(
         # starting point rather than return an invalid plan.
         rates = np.asarray(initial_rates, dtype=float)
 
+    initial = np.asarray(initial_rates, dtype=float)
     return SearchOutcome(
         rates=rates,
         fitness=fitness_fn(rates),
         accepted_moves=-1,
         proposed_moves=config.iterations,
+        headroom_lost=headroom_loss(supply, consumption, initial, rates),
     )
 
 

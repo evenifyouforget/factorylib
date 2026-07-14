@@ -5,9 +5,13 @@ that solution using factorylib.search's local search, scoring candidates
 with factorylib.endfield.goals.fitness instead -- which can prefer a plan
 with slightly less $ but simpler fractions, or a bit of production
 diverted to secondary goals (see Part 4). It starts from the LP optimum,
-so the two moves (round a rate down to a simpler fraction; allocate freed
+so the three moves (round a rate down to a simpler fraction; round a
+rate up to a simpler fraction if the slack allows; allocate freed/unused
 slack to another formula) can only trade $ for simplicity/secondary
-goals, never discard money for nothing.
+goals, never discard money for nothing. RefinedResult.headroom_lost
+flags resources that end up fully saturated but weren't in the LP
+optimum -- see factorylib.search's module docstring for what that does
+and doesn't prove.
 
 Backend choice: factorylib.search offers both the discrete-move simulated
 annealing ("sa") and a continuous scipy.optimize.dual_annealing backend
@@ -46,6 +50,7 @@ import numpy as np
 
 from factorylib.endfield.goals import ProductionPlan, WulingGoals, fitness
 from factorylib.endfield.wuling import (
+    RESOURCE_NAMES,
     XI_PER_FORGE,
     SearchResult,
     WulingConfig,
@@ -57,20 +62,35 @@ from factorylib.search import SearchConfig, search
 @dataclass
 class RefinedResult:
     """Result of refine(). rates/formula_names align positionally, as in
-    SearchResult."""
+    SearchResult.
+
+    headroom_lost: resource names (from RESOURCE_NAMES) that had spare
+    capacity under the LP-optimal plan but are fully saturated under
+    rates -- see factorylib.search.headroom_loss(). A diagnostic, not a
+    rejection: not necessarily a problem, but worth a human glance (see
+    factorylib.endfield.goals's module docstring for what this does and
+    doesn't prove).
+    """
 
     rates: np.ndarray
     dollar_output: float
     fitness: float
     formula_names: list[str]
+    headroom_lost: list[str]
 
 
 def _plan_from_rates(
-    rates: np.ndarray, formula_names: list[str], original_outputs: np.ndarray
+    rates: np.ndarray,
+    formula_names: list[str],
+    original_outputs: np.ndarray,
+    consumption: dict[str, np.ndarray],
 ) -> ProductionPlan:
+    multiples = dict(zip(formula_names, rates))
     return ProductionPlan(
         dollar_rate=float(np.asarray(rates) @ original_outputs),
-        multiples=dict(zip(formula_names, rates)),
+        good_rates=multiples,
+        multiples=multiples,
+        consumption=consumption,
     )
 
 
@@ -91,9 +111,14 @@ def refine(
     formulas = [formulas_dict[name] for name in base.formula_names]
     original_outputs = np.array([f.output for f in formulas], dtype=float)
     supply = wuling_config.base_supply + base.z * XI_PER_FORGE + base.metatransfer
+    consumption_by_name = dict(
+        zip(base.formula_names, (f.consumption for f in formulas))
+    )
 
     def fitness_fn(rates: np.ndarray) -> float:
-        plan = _plan_from_rates(rates, base.formula_names, original_outputs)
+        plan = _plan_from_rates(
+            rates, base.formula_names, original_outputs, consumption_by_name
+        )
         return fitness(plan, goals)
 
     outcome = search(
@@ -109,4 +134,5 @@ def refine(
         dollar_output=float(outcome.rates @ original_outputs),
         fitness=outcome.fitness,
         formula_names=base.formula_names,
+        headroom_lost=[RESOURCE_NAMES[k] for k in outcome.headroom_lost],
     )
