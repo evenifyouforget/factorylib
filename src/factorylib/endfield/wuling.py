@@ -30,6 +30,32 @@ FORMULA_NAMES = [
     "purify_node",
 ]
 
+RESOURCE_LABELS = {
+    "xi": "Xiranite",
+    "ori": "Originium Ore",
+    "ferr": "Ferrium Ore",
+    "cup_ore": "Cuprium Ore",
+    "cup": "Cuprium",
+    "sew": "Sewage",
+    "eff": "Xircon Effluent",
+    "inert": "Inert Xircon Effluent",
+}
+
+FORMULA_LABELS = {
+    "cup_conv": "Cuprium Ore Refining (Cuprium Ore → Cuprium + Sewage)",
+    "xi_sew": "Xiranite + Sewage Reaction (→ Xircon Effluent + Inert Xircon Effluent)",
+    "sc": "SC Wuling Battery",
+    "lc": "LC Wuling Battery",
+    "hp": "Hetonite Part",
+    "hx": "Heavy Xiranite",
+    "ya": "Yazhen Syringe A",
+    "yc": "Yazhen Syringe C",
+    "xi_sell": "Xiranite (sold)",
+    "cp_sell": "Cuprium Part (sold)",
+    "purify": "Purification Building (Inert Xircon Effluent → Xircon Effluent)",
+    "purify_node": "Test Area Purification Node (Sewage → Xircon Effluent)",
+}
+
 DEFAULT_BASE_SUPPLY = (0, 540, 90, 240, 0, 0, 0, 0)  # 1.2e base
 DEFAULT_MAX_FORGES = 12
 DEFAULT_METATRANSFERS = (

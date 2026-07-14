@@ -9,6 +9,8 @@ import numpy as np
 
 from factorylib.alternatives import find_alternatives
 from factorylib.endfield.wuling import (
+    FORMULA_LABELS,
+    RESOURCE_LABELS,
     RESOURCE_NAMES,
     XI_PER_FORGE,
     WulingConfig,
@@ -122,9 +124,12 @@ def _format_result(label: str, result, formula_names: list[str]) -> str:
     ]
     for name, rate in zip(formula_names, result.formula_rates):
         if abs(rate) > 1e-9:
-            lines.append(f"    {name} = {_fmt(rate)} ({rate:.4f})")
+            full_name = FORMULA_LABELS.get(name, name)
+            lines.append(
+                f"    {full_name}: {_fmt(rate)} multiples/min ({rate:.4f}/min)"
+            )
     slack_parts = [
-        f"{name}={_fmt(s)}"
+        f"{RESOURCE_LABELS.get(name, name)}={_fmt(s)}"
         for name, s in zip(RESOURCE_NAMES, result.resource_slack)
         if abs(s) > 1e-9
     ]
