@@ -9,8 +9,8 @@ import random
 import numpy as np
 
 from factorylib.alternatives import find_alternatives
-from factorylib.delivery import DeliverySimConfig
-from factorylib.endfield.delivery import predict_delivery_selections
+from factorylib.delivery import DeliverySimConfig, simulate_delivery_selections
+from factorylib.endfield.delivery import accumulation_rates
 from factorylib.endfield.goals import WulingGoals
 from factorylib.endfield.refine import refine
 from factorylib.endfield.wuling import (
@@ -20,6 +20,7 @@ from factorylib.endfield.wuling import (
     RESOURCE_LABELS,
     RESOURCE_NAMES,
     SECONDARY_GOAL_FORMULA_NAMES,
+    SELL_PRIORITY,
     XI_PER_FORGE,
     WulingConfig,
     build_formulas,
@@ -27,6 +28,7 @@ from factorylib.endfield.wuling import (
 )
 from factorylib.fractions import snap_value
 from factorylib.optimize import OptimizeResult
+from factorylib.priority_sell import allocate_by_priority
 from factorylib.search import SearchConfig
 
 
@@ -253,13 +255,31 @@ def _format_metatransfer(mt: np.ndarray) -> str:
     return "select " + ", ".join(parts) if parts else "none"
 
 
+def _dollar_contributions(
+    result, formula_names: list[str], formulas: dict
+) -> dict[str, float]:
+    """Every formula's $/min contribution, keyed by internal formula name
+    (not label) -- shared by the income breakdown display and by the
+    delivery-job wiring, which needs the unsold portion (see
+    allocate_by_priority) as an accumulating-material rate."""
+    return {
+        name: rate * formulas[name].output
+        for name, rate in zip(formula_names, result.formula_rates)
+        if name in formulas and rate * formulas[name].output > 1e-9
+    }
+
+
 def _format_income_breakdown(
     result, formula_names: list[str], formulas: dict, stock_bill_cap: float
 ) -> str:
     """Breaks down $/min income by sellable good: absolute $/min, % of
-    total produced, and % of the stock-bill-cap goal -- plus the overall
-    total as a % of that goal, so it's immediately clear how it compares
-    without doing the division by hand."""
+    total produced, % of the stock-bill-cap goal, and how much of it
+    actually gets sold vs. accumulates unsold. The outpost's $ savings
+    only regenerate at stock_bill_cap, so goods are sold in a fixed
+    priority order (SELL_PRIORITY), not proportionally to production --
+    once the cap is exhausted, lower-priority goods simply pile up
+    unsold instead of being sold at a discount (see
+    factorylib.priority_sell)."""
     lines = []
     total = result.dollar_output
     if stock_bill_cap > 1e-9:
@@ -267,21 +287,38 @@ def _format_income_breakdown(
             f"    {100 * total / stock_bill_cap:.1f}% of {_fmt(stock_bill_cap)} "
             "$/min goal"
         )
-    contributions = [
-        (FORMULA_LABELS.get(name, name), rate * formulas[name].output)
-        for name, rate in zip(formula_names, result.formula_rates)
-        if name in formulas and rate * formulas[name].output > 1e-9
-    ]
+    contributions = _dollar_contributions(result, formula_names, formulas)
     if contributions:
+        sold, unsold = allocate_by_priority(
+            contributions, list(SELL_PRIORITY), stock_bill_cap
+        )
         lines.append("    Income breakdown:")
-        for label, amount in sorted(contributions, key=lambda kv: kv[1], reverse=True):
+        for name, amount in sorted(
+            contributions.items(), key=lambda kv: kv[1], reverse=True
+        ):
+            label = FORMULA_LABELS.get(name, name)
             pct_of_produced = 100 * amount / total if total > 1e-9 else 0.0
             pct_of_goal = (
                 100 * amount / stock_bill_cap if stock_bill_cap > 1e-9 else 0.0
             )
+            note = ""
+            if unsold.get(name, 0.0) > 1e-9:
+                note = (
+                    f" -- sold: {_fmt(sold[name])} $/min, "
+                    f"accumulating: {_fmt(unsold[name])} $/min"
+                )
             lines.append(
                 f"        {label}: {_fmt(amount)} $/min "
                 f"({pct_of_produced:.1f}% of produced, {pct_of_goal:.1f}% of goal)"
+                f"{note}"
+            )
+        total_unsold = sum(unsold.values())
+        if total_unsold > 1e-9:
+            lines.append(
+                f"        (outpost savings only regenerate at "
+                f"{_fmt(stock_bill_cap)} $/min -- {_fmt(total_unsold)} $/min "
+                "worth of goods above can't be sold yet and piles up "
+                "physically instead)"
             )
     return "\n".join(lines)
 
@@ -516,7 +553,28 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.delivery_seed,
     )
     rates_by_name = dict(zip(refined.formula_names, refined.rates))
-    tally = predict_delivery_selections(rates_by_name, refined_slack, delivery_config)
+    accumulating = accumulation_rates(rates_by_name, refined_slack)
+    # Goods the outpost's $ savings can't currently afford to buy (see
+    # _format_income_breakdown) don't vanish -- they pile up physically,
+    # so they're delivery-job candidates too, on top of the base-resource
+    # slack and unconsumed secondary goods accumulation_rates() already
+    # covers.
+    refined_contributions = _dollar_contributions(
+        refined_result, refined.formula_names, formulas
+    )
+    _, refined_unsold = allocate_by_priority(
+        refined_contributions, list(SELL_PRIORITY), args.stock_bill_cap
+    )
+    for name, unsold_dollar in refined_unsold.items():
+        good_yield = GOOD_YIELD.get(name)
+        output = formulas[name].output
+        if unsold_dollar <= 1e-9 or not good_yield or not output:
+            continue
+        label = FORMULA_LABELS.get(name, name)
+        accumulating[label] = (
+            accumulating.get(label, 0.0) + unsold_dollar * good_yield / output
+        )
+    tally = simulate_delivery_selections(accumulating, delivery_config)
     print(
         f"\nDelivery job prediction ({delivery_config.simulation_days} days, "
         f"{delivery_config.jobs_per_day} jobs/day, "

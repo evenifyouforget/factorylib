@@ -42,6 +42,31 @@ def test_main_prints_income_breakdown_with_goal_percentage(capsys):
     assert "% of goal" in out
 
 
+def test_main_income_breakdown_shows_sold_vs_accumulating(capsys):
+    """The outpost's $ savings only regenerate at the stock-bill cap, so
+    once produced $/min exceeds it, lower-priority goods (see
+    wuling.SELL_PRIORITY) accumulate unsold instead of all being sold
+    proportionally -- regression for the reported case where Xiranite
+    (lowest priority) is produced but the outpost has no savings left to
+    buy it, so it just piles up."""
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "accumulating" in out
+    assert "outpost savings only regenerate at 1090 $/min" in out
+
+
+def test_main_delivery_prediction_includes_unsold_goods(capsys):
+    """Goods the outpost can't currently afford to buy (see the income
+    breakdown) still physically accumulate, so they must be delivery-job
+    candidates too, not just leftover base-resource slack."""
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    delivery_section = out[out.index("Delivery job prediction") :]
+    assert "Cuprium Part (sold)" in delivery_section
+
+
 def test_main_income_breakdown_respects_stock_bill_cap_flag(capsys):
     rc = main(["--stock-bill-cap", "2000"])
     out = capsys.readouterr().out

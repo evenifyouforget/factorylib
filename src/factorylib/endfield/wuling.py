@@ -199,6 +199,20 @@ GOOD_YIELD = {
     "cp_sell": 1.0,
 }
 
+# The outpost's $ savings only regenerate at a fixed rate (WulingGoals.
+# stock_bill_cap), so at any instant only that much $ worth of produced
+# goods can actually be sold -- the rest accumulates unsold rather than
+# being sold at a discount. Real play sells in this order because
+# letting Hetonite Part or Yazhen A pile up to their storage cap stalls
+# those production lines entirely, and that stall cascades into less
+# Sewage/Xircon Effluent for the battery recipes that depend on it;
+# Heavy Xiranite and SC Wuling Battery are next (still worth protecting,
+# but less immediately disruptive), then Yazhen C. Everything else (LC
+# Wuling Battery, Xiranite/Cuprium Part sold) has no such upstream
+# dependency, so it's lowest priority by default -- see
+# factorylib.priority_sell.allocate_by_priority.
+SELL_PRIORITY = ("ya", "hp", "hx", "sc", "yc")
+
 RESOURCE_LABELS = {
     "xi": "Xiranite",
     "ori": "Originium Ore",
