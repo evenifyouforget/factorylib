@@ -301,3 +301,28 @@ def test_main_delivery_prediction_prints_percentages(capsys):
     assert rc == 0
     assert "selected" in out
     assert "%)" in out
+
+
+def test_main_diagram_flag_prints_written_path_when_available(capsys):
+    with patch(
+        "factorylib.endfield.cli.generate_diagram", return_value="/tmp/plan.png"
+    ):
+        rc = main(["--diagram", "/tmp/plan.png"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Diagram written to /tmp/plan.png" in out
+
+
+def test_main_diagram_flag_prints_skip_notice_when_graphviz_unavailable(capsys):
+    with patch("factorylib.endfield.cli.generate_diagram", return_value=None):
+        rc = main(["--diagram", "/tmp/plan.png"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "skipped diagram" in out
+
+
+def test_main_without_diagram_flag_prints_nothing_about_diagrams(capsys):
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "diagram" not in out.lower()

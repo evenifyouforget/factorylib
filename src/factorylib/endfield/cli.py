@@ -11,6 +11,7 @@ import numpy as np
 from factorylib.alternatives import find_alternatives
 from factorylib.delivery import DeliverySimConfig, simulate_delivery_selections
 from factorylib.endfield.delivery import accumulation_rates
+from factorylib.endfield.diagram import generate_diagram
 from factorylib.endfield.goals import WulingGoals
 from factorylib.endfield.refine import refine
 from factorylib.endfield.wuling import (
@@ -231,6 +232,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="RNG seed for delivery-job tie-breaking (reproducible by default)",
+    )
+    parser.add_argument(
+        "--diagram",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="write a Graphviz diagram of the refined solution's active formulas "
+        "to PATH (format inferred from its extension, e.g. plan.png); skipped "
+        "with a notice if the graphviz package or its `dot` executable isn't "
+        "installed",
     )
     return parser
 
@@ -607,5 +618,22 @@ def main(argv: list[str] | None = None) -> int:
             print(f"    (never selected: {', '.join(never_selected)})")
     else:
         print("    (nothing accumulates unconsumed in the depot)")
+
+    if args.diagram:
+        written = generate_diagram(
+            rates_by_name,
+            formulas,
+            RESOURCE_NAMES,
+            RESOURCE_LABELS,
+            FORMULA_LABELS,
+            args.diagram,
+        )
+        if written:
+            print(f"\nDiagram written to {written}")
+        else:
+            print(
+                f"\n(skipped diagram: install the graphviz package and its `dot` "
+                f"executable to write one to {args.diagram})"
+            )
 
     return 0
