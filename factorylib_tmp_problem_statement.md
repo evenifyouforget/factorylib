@@ -66,13 +66,13 @@ Moulding Unit: 60 Cuprium -> 30 Cuprium Bottle
 Moulding Unit: 60 Ferrium -> 30 Ferrium Bottle
 Moulding Unit: 60 Amethyst -> 30 Amethyst Bottle
 Moulding Unit: 60 Steel -> 30 Steel Bottle
-Moulding Unit: 60 Cryston -> 30 Cryston Bottle
+Moulding Unit: 60 Cryston Fiber -> 30 Cryston Bottle
 Moulding Unit: 60 Hetonite -> 30 Hetonite Bottle
 Fitting Unit: 30 Cuprium -> 30 Cuprium Part
 Fitting Unit: 30 Ferrium -> 30 Ferrium Part
 Fitting Unit: 30 Amethyst -> 30 Amethyst Part
 Fitting Unit: 30 Steel -> 30 Steel Part
-Fitting Unit: 30 Cryston -> 30 Cryston Part
+Fitting Unit: 30 Cryston Fiber -> 30 Cryston Part
 Fitting Unit: 30 Hetonite -> 6 Hetonite Part
 Filling Unit: 30 (some kind of Bottle) + 30 (some fluid) -> 30 (combination of that Bottle and that fluid)
 Packaging Unit: 60 Cuprium Part + 30 Cuprium Bottle filled with Yazhen Solution -> 6 Yazhen Syringe A
@@ -107,7 +107,7 @@ Gearing Unit: 60 Packed Origocrust + 60 Cryston Fiber -> 6 Cryston Component
 Gearing Unit: 30 Origocrust + 30 Amethyst -> 6 Amethyst Component
 Gearing Unit: 60 Packed Origocrust + 60 Xiranite -> 6 Xiranite Component
 Gearing Unit: 60 Cuprium Part + 60 Xiranite -> 6 Cuprium Component
-Gearing Unit: 12 Hetonite Part + 12 Heavy Xiranite -> 6 Hetonite Part
+Gearing Unit: 12 Hetonite Part + 12 Heavy Xiranite -> 6 Hetonite Component
 Test Area Purification Node: 30 Sewage -> 1 Xircon Effluent (max 12 multiples)
 Sell: 1 Xiranite -> 1 Wuling Stock Bill
 Sell: 1 Cuprium Part -> 1 Wuling Stock Bill
@@ -126,6 +126,8 @@ Craft Gear: 25000 Wuling Stock Bill + 50 Hetonite Component -> 1 Hetonite Compon
 Final output must have net 0 or negative sewage production.
 
 Please point out any recipes I may have apparently missed, or if any recipes don't line up (ex. due to typos).
+
+Corrections applied above, confirmed in review: the Gearing Unit recipe consuming Hetonite Part + Heavy Xiranite now outputs Hetonite Component (was typo'd as "Hetonite Part", which would have made it a net-consuming recipe with no distinct output, and left Craft Gear's Hetonite Component Gear with no producer); and the Moulding/Fitting Unit recipes that consume "Cryston" now read "Cryston Fiber" (the same item as produced by the Refining Unit above and consumed by the Cryston Component recipe -- "Cryston" alone was shorthand, not a separate item).
 
 # Part 4 - Expanded Wuling goals
 
