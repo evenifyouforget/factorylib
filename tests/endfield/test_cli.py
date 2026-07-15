@@ -63,12 +63,16 @@ def test_main_income_breakdown_shows_sold_vs_accumulating(capsys):
 def test_main_delivery_prediction_includes_unsold_goods(capsys):
     """Goods the outpost can't currently afford to buy (see the income
     breakdown) still physically accumulate, so they must be delivery-job
-    candidates too, not just leftover base-resource slack."""
-    rc = main([])
+    candidates too, not just leftover base-resource slack. A near-zero
+    stock-bill cap forces this deterministically (which specific good
+    ends up "the" unsold one at the default cap is refine()-seed/
+    formula-set sensitive, not the thing being tested here)."""
+    rc = main(["--stock-bill-cap", "1"])
     out = capsys.readouterr().out
     assert rc == 0
     delivery_section = out[out.index("Delivery job prediction") :]
     assert "Cuprium Part (sold)" in delivery_section
+    assert "SC Wuling Battery (sold)" in delivery_section
 
 
 def test_main_income_breakdown_respects_stock_bill_cap_flag(capsys):
@@ -109,7 +113,7 @@ def test_main_prints_alternatives_section_when_tied(capsys):
             "--max-forges",
             "8",
             "--base-supply",
-            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
             "--no-purify-node",
             "--formula-output",
             "hp_sell=288",
@@ -161,7 +165,7 @@ def test_main_prints_discrete_branch_ties(capsys):
             "--max-forges",
             "8",
             "--base-supply",
-            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
             "--no-purify-node",
             "--formula-output",
             "hx_sell=114",
@@ -180,10 +184,10 @@ def test_main_explicit_purify_building_and_metatransfer_flags(capsys):
             "--purify-building",
             # 25 Dense Originium Powder
             "--metatransfer",
-            "0,0,0,0,0,0,0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "0,0,0,0,0,0,0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
             # 25 Ferrium Ore
             "--metatransfer",
-            "0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
         ]
     )
     out = capsys.readouterr().out
@@ -253,6 +257,80 @@ def test_main_refine_backend_scipy_runs(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "backend=scipy" in out
+
+
+def test_main_prints_power_and_delivery_goal_percentage(capsys):
+    """Regression: power was never displayed anywhere in the report at
+    all (not just "usually 0"), so a real power route (sc_power/
+    lc_power) running -- or not -- was invisible either way."""
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Power:" in out
+    assert "% of 7000 W goal" in out
+    assert "Sandleaf Powder:" in out
+    assert "% of 15/min goal" in out
+
+
+def test_main_warns_when_power_goal_unmet(capsys):
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # Default refine weights never bother producing power (see
+    # goals.py/wuling.py's module docstrings), so this is met every time.
+    assert "Warning: only 0.0% of the 7000 W power goal is met" in out
+
+
+def test_main_no_power_warning_when_goal_met(capsys):
+    def fake_refine(base, config, goals, search_config, *, backend):
+        rates = base.result.formula_rates.copy()
+        rates[base.formula_names.index("thermal_bank")] = 1000.0  # 50000 W
+        return RefinedResult(
+            rates=rates,
+            dollar_output=base.result.dollar_output,
+            fitness=0.0,
+            formula_names=base.formula_names,
+            headroom_lost=[],
+        )
+
+    with patch("factorylib.endfield.cli.refine", side_effect=fake_refine):
+        rc = main(["--power-target", "7000"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "power goal is met" not in out
+
+
+def test_main_warns_when_stock_bill_goal_unmet(capsys):
+    rc = main(["--stock-bill-cap", "100000"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "stock-bill goal is met" in out
+
+
+def test_main_no_stock_bill_warning_when_goal_met(capsys):
+    rc = main(["--stock-bill-cap", "1"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "stock-bill goal is met" not in out
+
+
+def test_main_warns_when_delivery_goal_unmet(capsys):
+    def fake_refine(base, config, goals, search_config, *, backend):
+        rates = base.result.formula_rates.copy()
+        rates[base.formula_names.index("sandleaf_powder")] = 0.0
+        return RefinedResult(
+            rates=rates,
+            dollar_output=base.result.dollar_output,
+            fitness=0.0,
+            formula_names=base.formula_names,
+            headroom_lost=[],
+        )
+
+    with patch("factorylib.endfield.cli.refine", side_effect=fake_refine):
+        rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Sandleaf Powder delivery goal is met" in out
 
 
 def test_main_refine_reproducible_with_same_seed(capsys):
@@ -349,26 +427,3 @@ def test_main_without_diagram_flag_prints_nothing_about_diagrams(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "diagram" not in out.lower()
-
-
-def test_main_prints_gear_crafting_estimate(capsys):
-    """Craft Gear spends *accumulated* Wuling Stock Bill + Components
-    (see wuling.py's module docstring for why it's not a Formula) -- the
-    CLI reports a separate, out-of-LP days-to-afford estimate instead."""
-    rc = main([])
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "Gear crafting estimate" in out
-    assert "Xiranite Component Gear" in out
-    assert "Cuprium Component Gear" in out
-    assert "Hetonite Component Gear" in out
-
-
-def test_main_gear_crafting_estimate_shows_never_when_component_rate_is_zero(capsys):
-    rc = main([])
-    out = capsys.readouterr().out
-    assert rc == 0
-    # None of the Components run in the default refined solution (see
-    # test_default_gear_priority_penalizes_missing_components's docstring
-    # in test_goals.py), so all three gear estimates report "never".
-    assert "never at this rate" in out

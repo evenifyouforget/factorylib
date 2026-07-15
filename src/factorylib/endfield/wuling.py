@@ -79,8 +79,8 @@ Component Gear", etc.) is NOT modeled as a Formula: it spends *accumulated*
 Stock Bill (a one-time stock), not a steady per-minute flow, which doesn't
 fit this LP's steady-state framework at all (every other formula converts
 one per-minute rate into another; Craft Gear converts a lump of savings
-into a one-time item). See factorylib.endfield.goals for a separate,
-out-of-LP "days to afford" estimate instead.
+into a one-time item). Not modeled at all currently -- Components already
+show their own /min rate directly in the CLI's formula listing.
 
 The bracketed "secondary goals" formulas (gated by
 WulingConfig.secondary_goals, on by default) exist purely to give the
@@ -109,12 +109,14 @@ value), and none of the existing scenario-equivalence tests change:
     building-count dimension), sized to comfortably cover its tracked
     consumers' floor demand plus the delivery-job target.
   - thermal_bank (raw Originium Ore -> W) / thermal_bank_sc_valley /
-    thermal_bank_hc_valley are the three power routes tracked via
-    POWER_YIELD below, since Formula.output is $-only. The most
-    resource-efficient route (spec: "1.5 SC Wuling Battery -> 3200 W")
-    is still NOT modeled -- it would need splitting sc/lc's own $-bearing
-    step into make/sell/power variants, unlike Valley Battery (which
-    never sells for $ to begin with, so there's no split to make).
+    thermal_bank_hc_valley / sc_power / lc_power are the five power
+    routes tracked via POWER_YIELD below, since Formula.output is
+    $-only. sc_power/lc_power (the spec's most resource-efficient
+    route: "1.5 SC Wuling Battery -> 3200 W", "1.5 LC Wuling Battery ->
+    1600 W") consume the *same* sc_battery/lc_battery pool sc_sell/
+    lc_sell draw from (see sc_make's comment) -- a battery burned for
+    power is one that can't also be sold, a real mutual-exclusivity
+    constraint, not a free byproduct.
 
 Being zero-$, these formulas are also zero-$ *ties* with doing nothing,
 above whatever floor the $-maximizing LP actually needs from them.
@@ -151,6 +153,8 @@ SECONDARY_GOAL_FORMULA_NAMES = (
     "thermal_bank",
     "thermal_bank_sc_valley",
     "thermal_bank_hc_valley",
+    "sc_power",
+    "lc_power",
 )
 
 # Plumbing "_make" formulas that exist solely to feed a
@@ -213,6 +217,8 @@ RESOURCE_NAMES = [
     "steel_part",
     "sc_valley_battery",
     "hc_valley_battery",
+    "sc_battery",
+    "lc_battery",
 ]
 FORMULA_NAMES = [
     "cup_conv",
@@ -223,8 +229,12 @@ FORMULA_NAMES = [
     "liquid_xiranite_make",
     "xi_sew",
     "xircon_make",
-    "sc",
-    "lc",
+    "sc_make",
+    "sc_sell",
+    "sc_power",
+    "lc_make",
+    "lc_sell",
+    "lc_power",
     "cuprium_powder_make",
     "cuprium_solution_make",
     "hetonite_solution_make",
@@ -309,6 +319,8 @@ RESOURCE_BELT_SPEED = {
     "steel_part": 30.0,
     "sc_valley_battery": 30.0,
     "hc_valley_battery": 30.0,
+    "sc_battery": 30.0,
+    "lc_battery": 30.0,
 }
 
 # W produced per multiple of a formula's rate. Formula.output is $-only, so
@@ -318,6 +330,8 @@ POWER_YIELD = {
     "thermal_bank": 50.0,
     "thermal_bank_sc_valley": 420.0,
     "thermal_bank_hc_valley": 1100.0,
+    "sc_power": 3200.0,
+    "lc_power": 1600.0,
 }
 
 # Items of the named good produced per multiple of a formula's rate (the
@@ -337,8 +351,8 @@ GOOD_YIELD = {
     "xiranite_component": 6.0,
     "cuprium_component": 6.0,
     "hetonite_component": 6.0,
-    "sc": 6.0,
-    "lc": 6.0,
+    "sc_sell": 6.0,
+    "lc_sell": 6.0,
     "hp_sell": 6.0,
     "hx_sell": 6.0,
     "ya": 6.0,
@@ -361,7 +375,7 @@ GOOD_YIELD = {
 # Wuling Battery, Xiranite/Cuprium Part sold, Jincao Tea/Drink) has no
 # such upstream dependency, so it's lowest priority by default -- see
 # factorylib.priority_sell.allocate_by_priority.
-SELL_PRIORITY = ("ya", "hp_sell", "hx_sell", "sc", "yc")
+SELL_PRIORITY = ("ya", "hp_sell", "hx_sell", "sc_sell", "yc")
 
 RESOURCE_LABELS = {
     "xi": "Xiranite",
@@ -399,6 +413,8 @@ RESOURCE_LABELS = {
     "steel_part": "Steel Part",
     "sc_valley_battery": "SC Valley Battery",
     "hc_valley_battery": "HC Valley Battery",
+    "sc_battery": "SC Wuling Battery",
+    "lc_battery": "LC Wuling Battery",
 }
 
 FORMULA_LABELS = {
@@ -414,8 +430,18 @@ FORMULA_LABELS = {
     "xircon_make": (
         "Xircon Reaction (Xircon Effluent + Ferrium Powder → Xircon + Sewage)"
     ),
-    "sc": "SC Wuling Battery",
-    "lc": "LC Wuling Battery",
+    "sc_make": (
+        "SC Wuling Battery Packaging (Xircon + Dense Originium Powder → "
+        "SC Wuling Battery)"
+    ),
+    "sc_sell": "SC Wuling Battery (sold)",
+    "sc_power": "Thermal Bank (SC Wuling Battery → Power)",
+    "lc_make": (
+        "LC Wuling Battery Packaging (Xiranite + Dense Originium Powder → "
+        "LC Wuling Battery)"
+    ),
+    "lc_sell": "LC Wuling Battery (sold)",
+    "lc_power": "Thermal Bank (LC Wuling Battery → Power)",
     "cuprium_powder_make": "Cuprium Powder Shredding (Cuprium → Cuprium Powder)",
     "cuprium_solution_make": (
         "Cuprium Solution Reaction (Cuprium Powder → Cuprium Solution)"
@@ -625,11 +651,20 @@ def build_formulas(config: WulingConfig) -> dict[str, Formula]:
             {"eff": 60, "ferrium_powder": 30, "xircon": -30, "sew": -30}, 0
         ),
         # Packaging Unit: 30 Xircon + 120 Dense Originium Powder -> 6 SC
-        # Wuling Battery.
-        "sc": make_formula({"xircon": 30, "dop": 120}, 54 * 6),
+        # Wuling Battery. Its own resource (not a direct $ output): unlike
+        # Hetonite Part/Heavy Xiranite, SC/LC Wuling Battery have a
+        # *second* real consumer (Thermal Bank's battery -> power route,
+        # see sc_power/lc_power below) competing for the same physical
+        # batteries -- the same battery can't be both sold and burned for
+        # power, so it must be a shared resource, not a direct output.
+        "sc_make": make_formula({"xircon": 30, "dop": 120, "sc_battery": -6}, 0),
+        # Sell 6 SC Wuling Battery at $54/unit ($324/multiple).
+        "sc_sell": make_formula({"sc_battery": 6}, 54 * 6),
         # Packaging Unit: 30 Xiranite + 90 Dense Originium Powder -> 6 LC
-        # Wuling Battery.
-        "lc": make_formula({"xi": 30, "dop": 90}, 25 * 6),
+        # Wuling Battery. Same reasoning as sc_make above.
+        "lc_make": make_formula({"xi": 30, "dop": 90, "lc_battery": -6}, 0),
+        # Sell 6 LC Wuling Battery at $25/unit ($150/multiple).
+        "lc_sell": make_formula({"lc_battery": 6}, 25 * 6),
         # Shredding Unit: 30 Cuprium -> 30 Cuprium Powder.
         "cuprium_powder_make": make_formula({"cup": 30, "cuprium_powder": -30}, 0),
         # Reactor Crucible: 30 Cuprium Powder + 30 Acid -> 30 Cuprium
@@ -760,6 +795,13 @@ def build_formulas(config: WulingConfig) -> dict[str, Formula]:
         # POWER_YIELD, not $ output -- see module docstring). Raw Ore,
         # not dop.
         f["thermal_bank"] = make_formula({"ori": 7.5}, 0)
+        # Thermal Bank: 1.5 SC Wuling Battery -> 3200 W. Competes with
+        # sc_sell for the same sc_battery pool (see sc_make's comment) --
+        # the spec's most resource-efficient power route, but it means
+        # every battery burned for power is one *not* sold.
+        f["sc_power"] = make_formula({"sc_battery": 1.5}, 0)
+        # Thermal Bank: 1.5 LC Wuling Battery -> 1600 W. Same tradeoff.
+        f["lc_power"] = make_formula({"lc_battery": 1.5}, 0)
         # Grinding Unit: 60 Ferrium Powder + 30 Sandleaf Powder -> 30
         # Dense Ferrium Powder. Only feeds the Steel/HC Valley Battery
         # chain, so gated alongside it.

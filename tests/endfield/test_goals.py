@@ -1,12 +1,9 @@
 import numpy as np
-import pytest
 
 from factorylib.endfield.goals import (
-    GEAR_RECIPES,
     ProductionPlan,
     WulingGoals,
     _plan_complexity,
-    days_to_afford_gear,
     fitness,
     item_rates,
     plan_from_search_result,
@@ -200,46 +197,3 @@ def test_plan_from_search_result_uses_real_dollar_and_multiples():
     # $ value), so power_rate is 0 here too -- not because power isn't
     # modeled, but because the raw LP has no incentive to produce it.
     assert plan.power_rate == 0.0
-
-
-def test_days_to_afford_gear_matches_manual_calculation():
-    days = days_to_afford_gear(
-        "xiranite_component", sold_dollar_rate=1090.0, component_item_rate=0.5
-    )
-    minutes_per_day = 24 * 60
-    expected_stock_bill_days = 8000.0 / (1090.0 * minutes_per_day)
-    expected_component_days = 50.0 / (0.5 * minutes_per_day)
-    assert days == max(expected_stock_bill_days, expected_component_days)
-
-
-def test_days_to_afford_gear_returns_none_when_never_accumulating():
-    assert days_to_afford_gear("cuprium_component", 0.0, 0.5) is None
-    assert days_to_afford_gear("cuprium_component", 1090.0, 0.0) is None
-
-
-def test_days_to_afford_gear_rejects_unknown_component():
-    with pytest.raises(ValueError, match="hetonite_part"):
-        days_to_afford_gear("hetonite_part", 1090.0, 0.5)
-
-
-def test_gear_recipes_cover_the_three_gear_components():
-    assert set(GEAR_RECIPES) == {
-        "xiranite_component",
-        "cuprium_component",
-        "hetonite_component",
-    }
-    assert GEAR_RECIPES["xiranite_component"] == (
-        8000.0,
-        50.0,
-        "Xiranite Component Gear",
-    )
-    assert GEAR_RECIPES["cuprium_component"] == (
-        16000.0,
-        50.0,
-        "Cuprium Component Gear",
-    )
-    assert GEAR_RECIPES["hetonite_component"] == (
-        25000.0,
-        50.0,
-        "Hetonite Component Gear",
-    )

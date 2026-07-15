@@ -12,17 +12,13 @@ from factorylib.alternatives import find_alternatives
 from factorylib.delivery import DeliverySimConfig, simulate_delivery_selections
 from factorylib.endfield.delivery import accumulation_rates
 from factorylib.endfield.diagram import generate_diagram
-from factorylib.endfield.goals import (
-    GEAR_RECIPES,
-    WulingGoals,
-    days_to_afford_gear,
-    item_rates,
-)
+from factorylib.endfield.goals import WulingGoals, item_rates
 from factorylib.endfield.refine import refine
 from factorylib.endfield.wuling import (
     FORMULA_LABELS,
     GOOD_YIELD,
     METATRANSFER_ITEMS,
+    POWER_YIELD,
     RESOURCE_LABELS,
     RESOURCE_NAMES,
     SECONDARY_GOAL_FORMULA_NAMES,
@@ -254,6 +250,37 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def _fmt(x: float) -> str:
     return str(snap_value(x, warn=False))
+
+
+def _pct(rate: float, target: float, target_label: str) -> str:
+    """ "X% of <target_label> goal", or a no-requirement note if target<=0
+    (matching factorylib.endfield.goals._threshold_term's own
+    "target<=0 means no requirement" convention). target_label is
+    pre-formatted by the caller (e.g. "7000 W", "15/min") so the unit's
+    spacing/placement is exactly right either way."""
+    if target <= 0:
+        return "no goal set"
+    return f"{100 * rate / target:.1f}% of {target_label} goal"
+
+
+def _goal_shortfall_warnings(
+    rate: float, target: float, unit: str, goal_name: str
+) -> list[str]:
+    """A single "Warning: ..." line if rate falls short of target (empty
+    list otherwise, or if target<=0 meaning "not a real goal"). Surfaces
+    gaps like "power target never actually hit" that would otherwise be
+    silently absent from the report -- see the CLI's own history of that
+    exact confusion. unit is glued directly to numbers with no space if
+    it starts with "/" (e.g. "/min"), space-separated otherwise (e.g. "W").
+    """
+    if target <= 0 or rate >= target - 1e-9:
+        return []
+    pct = 100 * rate / target
+    sep = "" if unit.startswith("/") else " "
+    return [
+        f"  Warning: only {pct:.1f}% of the {_fmt(target)}{sep}{unit} {goal_name} "
+        f"goal is met ({_fmt(rate)}{sep}{unit} produced)"
+    ]
 
 
 def _format_metatransfer(mt: np.ndarray) -> str:
@@ -588,6 +615,31 @@ def main(argv: list[str] | None = None) -> int:
             "factorylib.endfield.goals's module docstring."
         )
 
+    rates_by_name = dict(zip(refined.formula_names, refined.rates))
+    power_rate = sum(
+        POWER_YIELD.get(name, 0.0) * rate for name, rate in rates_by_name.items()
+    )
+    good_rates = item_rates(rates_by_name)
+    power_target_label = f"{_fmt(goals.power_target)} W"
+    power_pct = _pct(power_rate, goals.power_target, power_target_label)
+    print(f"  Power: {_fmt(power_rate)} W ({power_pct})")
+    for good_name, target in goals.delivery_goods.items():
+        label = FORMULA_LABELS.get(good_name, good_name)
+        rate = good_rates.get(good_name, 0.0)
+        target_label = f"{_fmt(target)}/min"
+        print(f"  {label}: {_fmt(rate)}/min ({_pct(rate, target, target_label)})")
+
+    for warning in _goal_shortfall_warnings(
+        refined.dollar_output, goals.stock_bill_cap, "$/min", "stock-bill"
+    ) + _goal_shortfall_warnings(power_rate, goals.power_target, "W", "power"):
+        print(warning)
+    for good_name, target in goals.delivery_goods.items():
+        label = FORMULA_LABELS.get(good_name, good_name)
+        for warning in _goal_shortfall_warnings(
+            good_rates.get(good_name, 0.0), target, "/min", f"{label} delivery"
+        ):
+            print(warning)
+
     delivery_config = DeliverySimConfig(
         startup_days=args.delivery_startup_days,
         simulation_days=args.delivery_sim_days,
@@ -596,7 +648,6 @@ def main(argv: list[str] | None = None) -> int:
         depot_capacity=args.delivery_depot_capacity,
         seed=args.delivery_seed,
     )
-    rates_by_name = dict(zip(refined.formula_names, refined.rates))
     accumulating = accumulation_rates(rates_by_name, refined_slack)
     # Goods the outpost's $ savings can't currently afford to buy (see
     # _format_income_breakdown) don't vanish -- they pile up physically,
@@ -640,30 +691,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"    (never selected: {', '.join(never_selected)})")
     else:
         print("    (nothing accumulates unconsumed in the depot)")
-
-    sold_dollar_rate = sum(refined_sold.values())
-    good_rates = item_rates(rates_by_name)
-    print(
-        "\nGear crafting estimate (spends *accumulated* Wuling Stock Bill + "
-        "Components, not a steady flow -- see factorylib.endfield.goals):"
-    )
-    for component_name, (
-        stock_bill_cost,
-        component_cost,
-        gear_name,
-    ) in GEAR_RECIPES.items():
-        days = days_to_afford_gear(
-            component_name, sold_dollar_rate, good_rates.get(component_name, 0.0)
-        )
-        if days is None:
-            component_label = FORMULA_LABELS.get(component_name, component_name)
-            print(
-                f"    {gear_name}: never at this rate (needs "
-                f"{_fmt(stock_bill_cost)} Stock Bill + "
-                f"{_fmt(component_cost)} {component_label})"
-            )
-        else:
-            print(f"    {gear_name}: ~{days:.2f} days")
 
     if args.diagram:
         written = generate_diagram(

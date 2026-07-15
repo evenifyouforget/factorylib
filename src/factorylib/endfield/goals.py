@@ -322,39 +322,3 @@ def _plan_complexity(plan: ProductionPlan, max_denom: int) -> float:
             belts = rate * coeff / belt_speed
             total += fraction_complexity(belts, max_denom)
     return total
-
-
-# Craft Gear: "8000 Wuling Stock Bill + 50 Xiranite Component -> 1
-# Xiranite Component Gear" etc. Deliberately NOT modeled as a Formula
-# (see factorylib.endfield.wuling's module docstring): it spends
-# *accumulated* Stock Bill and Component items -- a one-time stock, not
-# a steady per-minute flow -- which doesn't fit this LP's steady-state
-# framework at all. name -> (Stock Bill cost, Component cost, Gear name).
-GEAR_RECIPES: dict[str, tuple[float, float, str]] = {
-    "xiranite_component": (8000.0, 50.0, "Xiranite Component Gear"),
-    "cuprium_component": (16000.0, 50.0, "Cuprium Component Gear"),
-    "hetonite_component": (25000.0, 50.0, "Hetonite Component Gear"),
-}
-
-_MINUTES_PER_DAY = 24 * 60
-
-
-def days_to_afford_gear(
-    component_name: str, sold_dollar_rate: float, component_item_rate: float
-) -> float | None:
-    """Days until enough Wuling Stock Bill (accumulated at
-    sold_dollar_rate -- the outpost-savings-capped *sold* $/min, not raw
-    produced $/min; see factorylib.priority_sell) and the named Component
-    (accumulated at component_item_rate items/min) have both piled up
-    to Craft this Gear, assuming neither is spent on anything else in the
-    meantime. Returns None if either rate is non-positive (would never
-    accumulate at all, so there's no finite answer).
-    """
-    if component_name not in GEAR_RECIPES:
-        raise ValueError(f"Unknown gear recipe: {component_name!r}")
-    if sold_dollar_rate <= 0 or component_item_rate <= 0:
-        return None
-    stock_bill_cost, component_cost, _ = GEAR_RECIPES[component_name]
-    days_for_stock_bill = stock_bill_cost / (sold_dollar_rate * _MINUTES_PER_DAY)
-    days_for_component = component_cost / (component_item_rate * _MINUTES_PER_DAY)
-    return max(days_for_stock_bill, days_for_component)

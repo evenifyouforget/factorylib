@@ -43,7 +43,7 @@ def test_replicates_1p2e_full():
     )
     rates = result.result.formula_rates
     assert np.allclose(
-        rates[:32],
+        rates[:34],
         [
             8,  # cup_conv
             18,  # originium_powder_make
@@ -53,8 +53,10 @@ def test_replicates_1p2e_full():
             393 / 73,  # liquid_xiranite_make
             393 / 73,  # xi_sew
             59 / 24,  # xircon_make
-            59 / 24,  # sc
-            0,  # lc
+            59 / 24,  # sc_make
+            59 / 24,  # sc_sell
+            0,  # lc_make
+            0,  # lc_sell
             13 / 3,  # cuprium_powder_make
             13 / 3,  # cuprium_solution_make
             13 / 12,  # hetonite_solution_make
@@ -79,12 +81,12 @@ def test_replicates_1p2e_full():
             410 / 73,  # purify_node
         ],
     )
-    assert np.allclose(rates[32:38], [0] * 6)  # the 4 Components + origocrust_make
+    assert np.allclose(rates[34:40], [0] * 6)  # the 4 Components + origocrust_make
     # + packed_origocrust_make
-    assert rates[38] == 5.0  # sandleaf_plant
-    assert 3.0 - 1e-9 <= rates[39] <= 5.0 + 1e-9  # sandleaf_powder
-    assert np.allclose(rates[40:], [0] * (len(rates) - 40))  # thermal_bank + the
-    # Steel/SC/HC Valley Battery chain
+    assert rates[40] == 5.0  # sandleaf_plant
+    assert 3.0 - 1e-9 <= rates[41] <= 5.0 + 1e-9  # sandleaf_powder
+    assert np.allclose(rates[42:], [0] * (len(rates) - 42))  # thermal_bank + sc/lc
+    # _power + the Steel/SC/HC Valley Battery chain
     slack = result.result.resource_slack
     assert np.allclose(slack[:9], [0] * 9)
     assert slack[9] >= -1e-9  # sandleaf surplus, if any
@@ -169,15 +171,16 @@ def test_secondary_goals_off_drops_the_goal_formulas_and_their_upstream_make_ste
     assert "packed_origocrust_make" not in f  # only xiranite_component needs it
     assert "sandleaf_plant" not in f  # only sandleaf_powder needs it
     assert "dense_ferrium_powder_make" not in f  # only the Steel/HC Valley chain
-    assert len(f) == 32  # 30 core + purify + purify_node
+    assert len(f) == 34  # 32 core + purify + purify_node
 
 
 def test_secondary_goals_on_by_default():
     f = build_formulas(WulingConfig())
     assert set(SECONDARY_GOAL_FORMULA_NAMES) <= f.keys()
-    # 32 core+conditional + 8 goal formulas (SECONDARY_GOAL_FORMULA_NAMES)
-    # + 8 plumbing (SECONDARY_PLUMBING_FORMULA_NAMES)
-    assert len(f) == 48
+    # 34 core+conditional + 10 goal formulas (SECONDARY_GOAL_FORMULA_NAMES,
+    # now including sc_power/lc_power) + 8 plumbing
+    # (SECONDARY_PLUMBING_FORMULA_NAMES)
+    assert len(f) == 52
 
 
 def test_secondary_goals_never_change_1p2e_full_dollar_output():
@@ -206,15 +209,32 @@ def test_hetonite_component_matches_recipe_line_exactly():
 
 
 def test_sc_and_lc_consume_dop_not_ori_directly():
-    """SC/LC Wuling Battery actually consume Dense Originium Powder, a
-    resource distinct from raw Originium Ore -- see module docstring."""
+    """SC/LC Wuling Battery Packaging actually consumes Dense Originium
+    Powder, a resource distinct from raw Originium Ore -- see module
+    docstring."""
     f = build_formulas(WulingConfig())
     dop_index = 8
     ori_index = 1
-    assert f["sc"].consumption[dop_index] == 120
-    assert f["sc"].consumption[ori_index] == 0
-    assert f["lc"].consumption[dop_index] == 90
-    assert f["lc"].consumption[ori_index] == 0
+    assert f["sc_make"].consumption[dop_index] == 120
+    assert f["sc_make"].consumption[ori_index] == 0
+    assert f["lc_make"].consumption[dop_index] == 90
+    assert f["lc_make"].consumption[ori_index] == 0
+
+
+def test_sc_and_lc_battery_are_shared_between_sell_and_power():
+    """The same physical battery can't be both sold and burned for
+    power -- sc_battery/lc_battery must be a shared resource with
+    competing consumers (sc_sell vs. sc_power, lc_sell vs. lc_power),
+    not a free byproduct of each."""
+    f = build_formulas(WulingConfig())
+    sc_battery_index = RESOURCE_NAMES.index("sc_battery")
+    lc_battery_index = RESOURCE_NAMES.index("lc_battery")
+    assert f["sc_make"].consumption[sc_battery_index] == -6
+    assert f["sc_sell"].consumption[sc_battery_index] == 6
+    assert f["sc_power"].consumption[sc_battery_index] == 1.5
+    assert f["lc_make"].consumption[lc_battery_index] == -6
+    assert f["lc_sell"].consumption[lc_battery_index] == 6
+    assert f["lc_power"].consumption[lc_battery_index] == 1.5
 
 
 def test_components_and_thermal_bank_do_not_consume_dop():
@@ -436,3 +456,34 @@ def test_hc_valley_battery_chain_is_connected():
     assert result.status == "optimal"
     assert result.dollar_output > 0
     assert result.formula_rates[-1] > 0  # hc_valley actually ran
+
+
+def test_diverting_sc_battery_to_power_reduces_achievable_dollar():
+    """Regression for the real trade-off the split exists to model: a
+    battery burned for power is one that can't also be sold. sc_power
+    itself is $0, so maximize_dollar never chooses it voluntarily --
+    instead, cap sc_sell's own limit (as if some batteries were forced
+    into Thermal Bank) and confirm the achievable $ from the same
+    sc_battery supply strictly drops, rather than power being "free"."""
+    from factorylib.optimize import Formula, maximize_dollar
+
+    f = build_formulas(WulingConfig())
+    chain_names = [
+        "ferrium_make",
+        "ferrium_powder_make",
+        "xircon_make",
+        "sc_make",
+        "sc_sell",
+    ]
+    supply = np.zeros(len(RESOURCE_NAMES))
+    supply[RESOURCE_NAMES.index("ferr")] = 90
+    supply[RESOURCE_NAMES.index("eff")] = 600
+    supply[RESOURCE_NAMES.index("dop")] = 600
+
+    baseline = maximize_dollar(supply, [f[name] for name in chain_names])
+
+    capped_chain = [f[name] for name in chain_names]
+    capped_chain[-1] = Formula(f["sc_sell"].consumption, f["sc_sell"].output, limit=1.0)
+    capped = maximize_dollar(supply, capped_chain)
+
+    assert capped.dollar_output < baseline.dollar_output
