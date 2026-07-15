@@ -58,3 +58,37 @@ def test_unbounded_baseline_has_no_alternatives():
     result = find_alternatives([10.0], formulas)
     assert result.baseline.status == "unbounded"
     assert result.alternatives == []
+
+
+def test_every_alternative_matches_baseline_dollar_on_a_real_complex_system():
+    """Regression: on the factorylib.endfield Wuling model (48 formulas,
+    many zero-$ plumbing steps sharing scarce resources with $-earning
+    ones), perturbing a zero-$ formula's output could previously resolve
+    to a vertex that was only optimal *for the perturbed problem* --
+    e.g. sacrificing most of the real battery-production chain to chase
+    an intermediate refining step's own tiny epsilon reward -- and get
+    reported as a "tied alternative" despite being far worse under the
+    real objective. The old rates-only distinctness check couldn't catch
+    this; only checking recomputed dollar_output against baseline can.
+    Uses the full, unfiltered formula set (no cli.py-style exclusions)
+    to exercise the worst case directly."""
+    from factorylib.endfield.wuling import (
+        XI_PER_FORGE,
+        WulingConfig,
+        build_formulas,
+        search,
+    )
+
+    config = WulingConfig()
+    best = search(config)
+    formulas = build_formulas(config)
+    formulas["hx_make"].limit = config.max_forges - best.z
+    supply = config.base_supply + best.z * XI_PER_FORGE + best.metatransfer
+
+    result = find_alternatives(
+        supply, list(formulas.values()), epsilon=1e-4, max_solutions=10
+    )
+    assert np.isclose(result.baseline.dollar_output, 206735 / 146)
+    assert len(result.alternatives) >= 1  # the real ya<->jincao_tea tie
+    for alt in result.alternatives:
+        assert np.isclose(alt.dollar_output, result.baseline.dollar_output)

@@ -44,10 +44,13 @@ def find_alternatives(
     re-solves. A degenerate LP (multiple optima) will resolve to a
     different vertex under a small nudge; a non-degenerate one won't. Any
     resulting formula_rates that differs from the baseline and from every
-    alternative already kept (by more than rate_tol under max_abs_diff) is
-    kept as a genuine alternative, with its dollar_output and
-    resource_slack recomputed against the original (unperturbed) outputs
-    so the epsilon nudge never leaks into the reported numbers.
+    alternative already kept (by more than rate_tol under max_abs_diff)
+    AND whose dollar_output, recomputed against the *original*
+    (unperturbed) outputs, still matches the baseline's is kept as a
+    genuine alternative -- a perturbation direction can otherwise resolve
+    to a vertex that's only optimal *for the perturbed problem*, not a
+    real tie at all, which the rates-only distinctness check alone can't
+    catch.
 
     Args:
         supply: resource supply vector, as in maximize_dollar.
@@ -104,6 +107,8 @@ def find_alternatives(
 
             rates = res.formula_rates
             dollar = float(rates @ original_outputs)
+            if not np.isclose(dollar, baseline.dollar_output, rtol=1e-6, atol=1e-6):
+                continue
             slack = np.maximum(0.0, supply_arr - consumption @ rates)
             found.append(
                 OptimizeResult(

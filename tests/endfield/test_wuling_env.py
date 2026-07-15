@@ -16,21 +16,23 @@ from factorylib.endfield.wuling import (
 def test_replicates_1p2e_full():
     """Matches tests/wuling/test_wuling_1p2e.py::test_1p2e_full exactly
     (dollar/rates for the original 12 formulas are unchanged by the dop
-    split and the de-flattening refactor -- every "_make" formula is a
-    lossless, unconstrained pass-through, so the historical $ figure and
-    every $-formula's rate are bit-for-bit identical; the metatransfer is
-    now 25 Dense Originium Powder directly instead of the old
-    50-ori-equivalent, representing the identical real quantity).
+    split and the de-flattening/uncollapsing refactors -- every "_make"/
+    "_solution_make"/"_powder_make"/"_bottle_make" formula is a lossless,
+    unconstrained pass-through, so the historical $ figure and every
+    $-formula's rate are bit-for-bit identical; the metatransfer is now
+    25 Dense Originium Powder directly instead of the old 50-ori-
+    equivalent, representing the identical real quantity).
 
     Most of the trailing secondary-goal/plumbing formulas (Components,
-    their upstream _make steps, Thermal Bank -- see wuling.py's module
-    docstring) are zero-$ dead ends the $-maximizing LP never uses.
-    sandleaf_powder is the exception: since ori_to_dop actually consumes
-    30 sandleaf/multiple, its rate is pinned to at least ori_to_dop's
-    floor demand (9 * 30 / 90 yield = 3.0), not fixed at 0 -- and, being
-    $0 itself, is otherwise a genuine LP degeneracy above that floor
-    (HiGHS is free to pick anywhere up to its limit=5), so it's checked
-    as a range instead of an exact value.
+    their upstream _make steps, Thermal Bank, SC/HC Valley Battery -- see
+    wuling.py's module docstring) are zero-$ dead ends the $-maximizing
+    LP never uses. sandleaf_powder/sandleaf_plant are the exception:
+    since ori_to_dop actually consumes 30 sandleaf/multiple, sandleaf_powder's
+    rate is pinned to at least ori_to_dop's floor demand (9 * 30 / 90
+    yield = 3.0), not fixed at 0 -- and, being $0 itself, is otherwise a
+    genuine LP degeneracy above that floor (HiGHS is free to pick
+    anywhere up to its limit=5), so it's checked as a range instead of an
+    exact value.
     """
     result = search(preset_1p2e_full())
     assert result.result.status == "optimal"
@@ -41,33 +43,48 @@ def test_replicates_1p2e_full():
     )
     rates = result.result.formula_rates
     assert np.allclose(
-        rates[:19],
+        rates[:32],
         [
             8,  # cup_conv
-            393 / 73,  # xi_sew
+            18,  # originium_powder_make
             9,  # ori_to_dop
             3,  # ferrium_make
+            3,  # ferrium_powder_make
+            393 / 73,  # liquid_xiranite_make
+            393 / 73,  # xi_sew
             59 / 24,  # xircon_make
             59 / 24,  # sc
             0,  # lc
+            13 / 3,  # cuprium_powder_make
+            13 / 3,  # cuprium_solution_make
+            13 / 12,  # hetonite_solution_make
             13 / 24,  # hetonite_make
             13 / 24,  # hp_make
             13 / 24,  # hp_sell
             2,  # hx_make
             2,  # hx_sell
+            0,  # ferrium_part_make
+            11 / 12,  # cuprium_bottle_make
+            0,  # ferrium_bottle_make
+            11 / 12,  # yazhen_solution_make
+            0,  # jincao_solution_make
             11 / 12,  # ya
             0,  # yc
+            0,  # jincao_tea
+            0,  # jincao_drink
             1350 / 73,  # xi_sell
-            0,  # cuprium_part_make
+            11 / 6,  # cuprium_part_make
             0,  # cp_sell
             393 / 292,  # purify
             410 / 73,  # purify_node
         ],
     )
-    assert np.allclose(rates[19:25], [0, 0, 0, 0, 0, 0])  # the 4 Components + their
-    # upstream origocrust_make/packed_origocrust_make
-    assert 3.0 - 1e-9 <= rates[25] <= 5.0 + 1e-9  # sandleaf_powder
-    assert rates[26] == 0  # thermal_bank
+    assert np.allclose(rates[32:38], [0] * 6)  # the 4 Components + origocrust_make
+    # + packed_origocrust_make
+    assert rates[38] == 5.0  # sandleaf_plant
+    assert 3.0 - 1e-9 <= rates[39] <= 5.0 + 1e-9  # sandleaf_powder
+    assert np.allclose(rates[40:], [0] * (len(rates) - 40))  # thermal_bank + the
+    # Steel/SC/HC Valley Battery chain
     slack = result.result.resource_slack
     assert np.allclose(slack[:9], [0] * 9)
     assert slack[9] >= -1e-9  # sandleaf surplus, if any
@@ -91,11 +108,24 @@ def test_replicates_1p2_full():
 
 
 def test_formula_limit_override_ban_ya():
-    """Matches tests/wuling/test_wuling_1p2e.py::test_1p2e_variants[ban_ya]."""
-    config = WulingConfig(formula_limits={"ya": 0})
+    """Matches tests/wuling/test_wuling_1p2e.py::test_1p2e_variants[ban_ya].
+
+    jincao_tea is a perfect economic substitute for ya now (identical
+    recipe shape and price -- see module docstring), so banning ya alone
+    no longer reduces $-optimal output; banning both is required to
+    reproduce the historical figure, which assumed no such substitute
+    existed."""
+    config = WulingConfig(formula_limits={"ya": 0, "jincao_tea": 0})
     result = search(config)
     assert result.result.status == "optimal"
     assert np.isclose(result.result.dollar_output, 205129 / 146)
+
+
+def test_banning_ya_alone_is_absorbed_by_jincao_tea():
+    config = WulingConfig(formula_limits={"ya": 0})
+    result = search(config)
+    assert result.result.status == "optimal"
+    assert np.isclose(result.result.dollar_output, 206735 / 146)
 
 
 def test_formula_limit_override_ban_hp():
@@ -137,15 +167,17 @@ def test_secondary_goals_off_drops_the_goal_formulas_and_their_upstream_make_ste
     assert set(SECONDARY_GOAL_FORMULA_NAMES).isdisjoint(f)
     assert "origocrust_make" not in f  # only ferrium_component needs it
     assert "packed_origocrust_make" not in f  # only xiranite_component needs it
-    assert len(f) == 19  # 17 core + purify + purify_node
+    assert "sandleaf_plant" not in f  # only sandleaf_powder needs it
+    assert "dense_ferrium_powder_make" not in f  # only the Steel/HC Valley chain
+    assert len(f) == 32  # 30 core + purify + purify_node
 
 
 def test_secondary_goals_on_by_default():
     f = build_formulas(WulingConfig())
     assert set(SECONDARY_GOAL_FORMULA_NAMES) <= f.keys()
-    assert (
-        len(f) == 27
-    )  # 19 + 6 goal formulas + origocrust_make + packed_origocrust_make
+    # 32 core+conditional + 8 goal formulas (SECONDARY_GOAL_FORMULA_NAMES)
+    # + 8 plumbing (SECONDARY_PLUMBING_FORMULA_NAMES)
+    assert len(f) == 48
 
 
 def test_secondary_goals_never_change_1p2e_full_dollar_output():
@@ -230,17 +262,23 @@ def test_dop_metatransfer_still_reproduces_1p2e_full_dollar():
     assert np.isclose(result.result.dollar_output, 206735 / 146)
 
 
-def test_sandleaf_powder_produces_sandleaf_consumes_no_base_resource():
+def test_sandleaf_powder_produces_sandleaf_from_sandleaf_raw():
     """Fixed from the earlier dead-end bug: Sandleaf Powder is a real
     shared co-input to Grinding Unit recipes (ori_to_dop among them, see
-    module docstring), not an unconsumed dead end -- but it still doesn't
-    consume any of the *base* tracked resources itself."""
+    module docstring), not an unconsumed dead end. It's fed by
+    sandleaf_plant (Planting Unit, uncollapsed from sandleaf_powder
+    itself) rather than a tracked *base* resource, so it still doesn't
+    consume anything from the original 9-resource base model."""
     f = build_formulas(WulingConfig())
-    sandleaf_index = 9
+    sandleaf_raw_index = RESOURCE_NAMES.index("sandleaf_raw")
+    sandleaf_index = RESOURCE_NAMES.index("sandleaf")
     consumption = f["sandleaf_powder"].consumption
-    assert np.allclose(consumption[:sandleaf_index], 0.0)
+    assert consumption[:9].sum() == 0.0
+    assert consumption[sandleaf_raw_index] == 30.0
     assert consumption[sandleaf_index] == -90.0
     assert f["sandleaf_powder"].output == 0
+    assert f["sandleaf_plant"].consumption[sandleaf_raw_index] == -30.0
+    assert f["sandleaf_plant"].limit == 5
 
 
 def test_ori_to_dop_consumes_sandleaf_when_secondary_goals_on():
@@ -258,3 +296,143 @@ def test_ori_to_dop_ignores_sandleaf_when_secondary_goals_off():
     sandleaf_index = 9
     f = build_formulas(WulingConfig(secondary_goals=False))
     assert f["ori_to_dop"].consumption[sandleaf_index] == 0.0
+
+
+def test_xircon_and_hetonite_reactions_need_ferrium_powder_not_ferrium():
+    """Both real recipes ("Reactor Crucible: 60 Xircon Effluent + 30
+    Ferrium Powder -> ...", "... + 30 Ferrium Powder -> 30 Hetonite +
+    ...") need the shredded Powder form specifically, distinct from
+    refined Ferrium itself (which ferrium_component/yc/ferrium_part_make
+    /ferrium_bottle_make need directly) -- see module docstring."""
+    f = build_formulas(WulingConfig())
+    ferrium_index = RESOURCE_NAMES.index("ferrium")
+    ferrium_powder_index = RESOURCE_NAMES.index("ferrium_powder")
+    for name in ("xircon_make", "hetonite_make"):
+        assert f[name].consumption[ferrium_index] == 0
+        assert f[name].consumption[ferrium_powder_index] == 30
+
+
+def test_jincao_tea_and_drink_match_ya_yc_price_and_shape():
+    """Jincao Tea/Drink are new formulas mirroring Yazhen Syringe A/C
+    exactly (same recipe shape, same $ price -- see module docstring),
+    just fed by jincao_solution instead of yazhen_solution."""
+    f = build_formulas(WulingConfig())
+    cuprium_part_index = RESOURCE_NAMES.index("cuprium_part")
+    cuprium_bottle_index = RESOURCE_NAMES.index("cuprium_bottle")
+    jincao_solution_index = RESOURCE_NAMES.index("jincao_solution")
+    assert f["jincao_tea"].consumption[cuprium_part_index] == 60
+    assert f["jincao_tea"].consumption[cuprium_bottle_index] == 30
+    assert f["jincao_tea"].consumption[jincao_solution_index] == 30
+    assert f["jincao_tea"].output == f["ya"].output == 22 * 6
+
+    ferrium_part_index = RESOURCE_NAMES.index("ferrium_part")
+    ferrium_bottle_index = RESOURCE_NAMES.index("ferrium_bottle")
+    assert f["jincao_drink"].consumption[ferrium_part_index] == 60
+    assert f["jincao_drink"].consumption[ferrium_bottle_index] == 30
+    assert f["jincao_drink"].consumption[jincao_solution_index] == 30
+    assert f["jincao_drink"].output == f["yc"].output == 16 * 6
+
+
+def test_sc_hc_valley_battery_are_zero_dollar_power_only():
+    """Unlike SC/LC *Wuling* Battery, there's no Sell recipe for SC/HC
+    Valley Battery in the spec -- their only purpose is feeding Thermal
+    Bank's more efficient battery -> power route (see module docstring),
+    so they (and their thermal_bank_* consumers) must be zero-$ and
+    gated behind secondary_goals."""
+    from factorylib.endfield.wuling import POWER_YIELD, SECONDARY_GOAL_FORMULA_NAMES
+
+    f = build_formulas(WulingConfig())
+    for name in (
+        "sc_valley",
+        "hc_valley",
+        "thermal_bank_sc_valley",
+        "thermal_bank_hc_valley",
+    ):
+        assert f[name].output == 0
+
+    assert "thermal_bank_sc_valley" in SECONDARY_GOAL_FORMULA_NAMES
+    assert "thermal_bank_hc_valley" in SECONDARY_GOAL_FORMULA_NAMES
+    assert POWER_YIELD["thermal_bank_sc_valley"] == 420.0
+    assert POWER_YIELD["thermal_bank_hc_valley"] == 1100.0
+
+    f_off = build_formulas(WulingConfig(secondary_goals=False))
+    for name in (
+        "sc_valley",
+        "hc_valley",
+        "thermal_bank_sc_valley",
+        "thermal_bank_hc_valley",
+        "dense_ferrium_powder_make",
+        "steel_make",
+        "steel_part_make",
+    ):
+        assert name not in f_off
+
+
+def test_lc_valley_battery_not_modeled():
+    """LC Valley Battery needs Amethyst Part, which needs Amethyst Ore --
+    a base resource this model doesn't track at all (same reason Cryston
+    /Amethyst Component aren't modeled either)."""
+    f = build_formulas(WulingConfig())
+    assert "lc_valley" not in f
+    assert "amethyst" not in RESOURCE_NAMES
+
+
+def test_sc_valley_battery_chain_is_connected():
+    """60 Ferrium Part + 90 Originium Powder -> 6 SC Valley Battery, fed
+    by the real Ferrium Ore -> Ferrium -> Ferrium Part chain. Forces
+    sc_valley's output > 0 (normally $0) purely to make maximize_dollar
+    want to run it if it possibly could, isolating whether the resource
+    chain connects at all."""
+    from factorylib.optimize import Formula, maximize_dollar
+
+    f = build_formulas(WulingConfig())
+    chain_names = [
+        "ferrium_make",
+        "ferrium_part_make",
+        "originium_powder_make",
+        "sc_valley",
+    ]
+    chain = [f[name] for name in chain_names]
+    chain[-1] = Formula(
+        f["sc_valley"].consumption, output=1.0, limit=f["sc_valley"].limit
+    )
+    supply = np.zeros(len(RESOURCE_NAMES))
+    supply[RESOURCE_NAMES.index("ferr")] = 600
+    supply[RESOURCE_NAMES.index("ori")] = 600
+    result = maximize_dollar(supply, chain)
+    assert result.status == "optimal"
+    assert result.dollar_output > 0
+    assert result.formula_rates[-1] > 0  # sc_valley actually ran
+
+
+def test_hc_valley_battery_chain_is_connected():
+    """60 Steel Part + 90 Dense Originium Powder -> 6 HC Valley Battery,
+    fed by the real Ferrium Ore -> Ferrium -> Ferrium Powder -> Dense
+    Ferrium Powder (needs Sandleaf Powder too) -> Steel -> Steel Part
+    chain, plus Dense Originium Powder from ori_to_dop."""
+    from factorylib.optimize import Formula, maximize_dollar
+
+    f = build_formulas(WulingConfig())
+    chain_names = [
+        "ferrium_make",
+        "ferrium_powder_make",
+        "dense_ferrium_powder_make",
+        "steel_make",
+        "steel_part_make",
+        "originium_powder_make",
+        "ori_to_dop",
+        "sandleaf_plant",
+        "sandleaf_powder",
+        "hc_valley",
+    ]
+    chain = [f[name] for name in chain_names]
+    chain[-1] = Formula(
+        f["hc_valley"].consumption, output=1.0, limit=f["hc_valley"].limit
+    )
+    supply = np.zeros(len(RESOURCE_NAMES))
+    supply[RESOURCE_NAMES.index("ferr")] = 600
+    supply[RESOURCE_NAMES.index("ori")] = 600
+    result = maximize_dollar(supply, chain)
+    assert result.status == "optimal"
+    assert result.dollar_output > 0
+    assert result.formula_rates[-1] > 0  # hc_valley actually ran

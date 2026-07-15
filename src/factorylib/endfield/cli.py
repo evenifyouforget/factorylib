@@ -12,7 +12,12 @@ from factorylib.alternatives import find_alternatives
 from factorylib.delivery import DeliverySimConfig, simulate_delivery_selections
 from factorylib.endfield.delivery import accumulation_rates
 from factorylib.endfield.diagram import generate_diagram
-from factorylib.endfield.goals import WulingGoals
+from factorylib.endfield.goals import (
+    GEAR_RECIPES,
+    WulingGoals,
+    days_to_afford_gear,
+    item_rates,
+)
 from factorylib.endfield.refine import refine
 from factorylib.endfield.wuling import (
     FORMULA_LABELS,
@@ -21,6 +26,7 @@ from factorylib.endfield.wuling import (
     RESOURCE_LABELS,
     RESOURCE_NAMES,
     SECONDARY_GOAL_FORMULA_NAMES,
+    SECONDARY_PLUMBING_FORMULA_NAMES,
     SELL_PRIORITY,
     XI_PER_FORGE,
     WulingConfig,
@@ -470,29 +476,45 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
 
-    # Exclude the zero-$ secondary-goal formulas from tie detection: any
-    # slack they could (for free) absorb is a real LP degeneracy but not
-    # an economically meaningful "tied solution" (see wuling.py's module
-    # docstring). origocrust_make/packed_origocrust_make must go with
-    # them: their *sole* consumers (ferrium_component/xiranite_component)
-    # are excluded above, so left in, they'd become dangling zero-$
-    # formulas with no real purpose in this filtered sub-problem --
-    # find_alternatives' epsilon nudge would then "discover" spurious
-    # alternatives that waste real Originium Ore on them for no benefit
-    # (same false-tie class this exclusion already prevents for the
-    # Components themselves).
-    _tie_detection_exclude = SECONDARY_GOAL_FORMULA_NAMES + (
-        "origocrust_make",
-        "packed_origocrust_make",
+    # Exclude the zero-$ secondary-goal formulas (and the plumbing that
+    # solely feeds them) from the tie-detection LP entirely: any slack
+    # they could (for free) absorb is a real LP degeneracy but not an
+    # economically meaningful "tied solution" (see wuling.py's module
+    # docstring), and leaving their own internal degeneracy in the LP
+    # risks a *different* HiGHS vertex for one of them (even with an
+    # unrelated formula perturbed) tripping the structurally-distinct
+    # check below as a false positive. sandleaf_powder is deliberately
+    # kept in despite being in SECONDARY_GOAL_FORMULA_NAMES: ori_to_dop
+    # (core) genuinely needs its output, so excluding it would starve
+    # ori_to_dop and corrupt the *baseline* dollar figure within this
+    # filtered sub-problem, not just suppress a spurious alternative.
+    _tie_detection_exclude = tuple(
+        name
+        for name in SECONDARY_GOAL_FORMULA_NAMES + SECONDARY_PLUMBING_FORMULA_NAMES
+        if name != "sandleaf_powder"
     )
     primary_names = [
         name for name in best.formula_names if name not in _tie_detection_exclude
     ]
+    primary_formulas = [formulas[name] for name in primary_names]
+    # Only perturb $-bearing formulas' outputs: this is what Part 2's own
+    # "adjusting weights" framing implies (a zero-$ formula has no weight
+    # to begin with), and it's strictly fewer LP solves. Not required for
+    # correctness -- find_alternatives' own dollar-closeness check
+    # catches a bad alternative regardless of which direction produced
+    # it -- but restricting directions here means fewer wasted solves
+    # get discarded by that check in the first place.
+    directions = [
+        vec
+        for vec, name in zip(np.eye(len(primary_formulas)), primary_names)
+        if formulas[name].output > 0
+    ]
     alt_result = find_alternatives(
         supply,
-        [formulas[name] for name in primary_names],
+        primary_formulas,
         epsilon=args.epsilon,
         max_solutions=args.max_solutions,
+        directions=directions,
     )
     if alt_result.alternatives:
         print("\nTied alternatives (same z/metatransfer, different LP vertex):")
@@ -584,7 +606,7 @@ def main(argv: list[str] | None = None) -> int:
     refined_contributions = _dollar_contributions(
         refined_result, refined.formula_names, formulas
     )
-    _, refined_unsold = allocate_by_priority(
+    refined_sold, refined_unsold = allocate_by_priority(
         refined_contributions, list(SELL_PRIORITY), args.stock_bill_cap
     )
     for name, unsold_dollar in refined_unsold.items():
@@ -618,6 +640,30 @@ def main(argv: list[str] | None = None) -> int:
             print(f"    (never selected: {', '.join(never_selected)})")
     else:
         print("    (nothing accumulates unconsumed in the depot)")
+
+    sold_dollar_rate = sum(refined_sold.values())
+    good_rates = item_rates(rates_by_name)
+    print(
+        "\nGear crafting estimate (spends *accumulated* Wuling Stock Bill + "
+        "Components, not a steady flow -- see factorylib.endfield.goals):"
+    )
+    for component_name, (
+        stock_bill_cost,
+        component_cost,
+        gear_name,
+    ) in GEAR_RECIPES.items():
+        days = days_to_afford_gear(
+            component_name, sold_dollar_rate, good_rates.get(component_name, 0.0)
+        )
+        if days is None:
+            component_label = FORMULA_LABELS.get(component_name, component_name)
+            print(
+                f"    {gear_name}: never at this rate (needs "
+                f"{_fmt(stock_bill_cost)} Stock Bill + "
+                f"{_fmt(component_cost)} {component_label})"
+            )
+        else:
+            print(f"    {gear_name}: ~{days:.2f} days")
 
     if args.diagram:
         written = generate_diagram(

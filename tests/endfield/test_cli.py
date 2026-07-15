@@ -15,7 +15,11 @@ def test_main_default_prints_1p2e_full_dollar(capsys):
 
 
 def test_main_with_limit_flag(capsys):
-    rc = main(["--limit", "ya=0"])
+    """jincao_tea is a perfect economic substitute for ya (identical
+    recipe shape/price -- see wuling.py's module docstring), so banning
+    ya alone must also ban jincao_tea to reproduce the historical
+    ban_ya figure."""
+    rc = main(["--limit", "ya=0", "--limit", "jincao_tea=0"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "205129/146" in out
@@ -105,7 +109,7 @@ def test_main_prints_alternatives_section_when_tied(capsys):
             "--max-forges",
             "8",
             "--base-supply",
-            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
             "--no-purify-node",
             "--formula-output",
             "hp_sell=288",
@@ -117,19 +121,36 @@ def test_main_prints_alternatives_section_when_tied(capsys):
     assert "Tied alternatives" in out
 
 
-def test_main_no_ties_has_no_alternatives_section(capsys):
-    """Also guards against a real regression: sandleaf_powder has zero
+def test_main_no_ties_when_jincao_substitute_is_banned(capsys):
+    """Guards against a real regression: sandleaf_powder has zero
     resource cost, so the $-maximizing LP is trivially indifferent to its
     rate (any value up to its limit is equally optimal at $0 marginal
     value) -- a genuine LP degeneracy, but not an economically meaningful
-    "tied solution". main() excludes SECONDARY_GOAL_FORMULA_NAMES from
-    tie detection for exactly this reason; this test would fail if that
-    exclusion were removed."""
-    rc = main([])
+    "tied solution". main() excludes SECONDARY_GOAL_FORMULA_NAMES (and
+    the plumbing that solely feeds them) from tie detection for exactly
+    this reason; this test would fail if that exclusion were removed.
+    jincao_tea is banned here to isolate this from the separate, genuine
+    ya<->jincao_tea tie the default scenario now has (see the test
+    below)."""
+    rc = main(["--limit", "jincao_tea=0"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "Tied alternatives" not in out
     assert "Tied discrete branches" not in out
+
+
+def test_main_default_scenario_shows_genuine_ya_jincao_tea_tie(capsys):
+    """jincao_tea is a perfect economic substitute for ya (identical
+    recipe shape and price -- see wuling.py's module docstring), so the
+    default 1.2e-full scenario now has a real tied alternative: this is
+    exactly the kind of "genuine choice between two strategies" tie
+    detection is meant to surface, unlike the zero-$ secondary-goal
+    degeneracy the test above excludes."""
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Tied alternatives" in out
+    assert "206735/146" in out  # alternative's recomputed $ matches baseline
 
 
 def test_main_prints_discrete_branch_ties(capsys):
@@ -140,7 +161,7 @@ def test_main_prints_discrete_branch_ties(capsys):
             "--max-forges",
             "8",
             "--base-supply",
-            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
             "--no-purify-node",
             "--formula-output",
             "hx_sell=114",
@@ -157,10 +178,12 @@ def test_main_explicit_purify_building_and_metatransfer_flags(capsys):
     rc = main(
         [
             "--purify-building",
+            # 25 Dense Originium Powder
             "--metatransfer",
-            "0,0,0,0,0,0,0,0,25,0,0,0,0,0,0,0,0,0",  # 25 Dense Originium Powder
+            "0,0,0,0,0,0,0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            # 25 Ferrium Ore
             "--metatransfer",
-            "0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",  # 25 Ferrium Ore
+            "0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
         ]
     )
     out = capsys.readouterr().out
@@ -256,7 +279,7 @@ def test_main_random_seed_flag_prints_the_seed_used(capsys):
 
 
 def test_main_short_flags_match_long_flags(capsys):
-    rc = main(["-l", "ya=0"])
+    rc = main(["-l", "ya=0", "-l", "jincao_tea=0"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "205129/146" in out
@@ -326,3 +349,26 @@ def test_main_without_diagram_flag_prints_nothing_about_diagrams(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "diagram" not in out.lower()
+
+
+def test_main_prints_gear_crafting_estimate(capsys):
+    """Craft Gear spends *accumulated* Wuling Stock Bill + Components
+    (see wuling.py's module docstring for why it's not a Formula) -- the
+    CLI reports a separate, out-of-LP days-to-afford estimate instead."""
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Gear crafting estimate" in out
+    assert "Xiranite Component Gear" in out
+    assert "Cuprium Component Gear" in out
+    assert "Hetonite Component Gear" in out
+
+
+def test_main_gear_crafting_estimate_shows_never_when_component_rate_is_zero(capsys):
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # None of the Components run in the default refined solution (see
+    # test_default_gear_priority_penalizes_missing_components's docstring
+    # in test_goals.py), so all three gear estimates report "never".
+    assert "never at this rate" in out
