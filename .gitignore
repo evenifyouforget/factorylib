@@ -26,6 +26,12 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Generated Graphviz diagrams (factorylib.endfield's --diagram default,
+# only active when running from a source checkout -- see cli.py's
+# _default_diagram_path). Distinct from build/ above (Python packaging
+# artifacts).
+output/
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.

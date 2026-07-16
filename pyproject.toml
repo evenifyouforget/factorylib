@@ -12,7 +12,11 @@ requires-python = ">=3.12"
 dependencies = ["numpy", "scipy"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "pytest-xdist"]
+dev = ["pytest", "pytest-cov", "pytest-xdist", "graphviz"]
+diagram = ["graphviz"]
+
+[project.scripts]
+factorylib-endfield = "factorylib.endfield.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/factorylib"]
