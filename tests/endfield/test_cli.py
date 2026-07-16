@@ -7,6 +7,23 @@ from factorylib.endfield.cli import main
 from factorylib.endfield.refine import RefinedResult
 
 
+@pytest.fixture(autouse=True)
+def _diagram_generate_is_noop_by_default(monkeypatch):
+    """This test suite itself runs from a real source checkout, so
+    _default_diagram_path() resolves to a real output/wuling-diagram.png
+    for every main() call below that doesn't pass --diagram/--no-diagram
+    -- mock the actual file-writing generate_diagram() call to a no-op
+    by default so the other ~40 tests in this file (which don't care
+    about diagrams at all) don't have the side effect of writing real
+    files into output/. Tests that specifically exercise diagram
+    behavior re-patch generate_diagram (and/or _default_diagram_path)
+    within their own `with patch(...)` block, which composes fine on
+    top of this."""
+    monkeypatch.setattr(
+        "factorylib.endfield.cli.generate_diagram", lambda *args, **kwargs: None
+    )
+
+
 def test_main_default_prints_1p2e_full_dollar(capsys):
     rc = main([])
     out = capsys.readouterr().out
@@ -449,14 +466,34 @@ def test_main_delivery_prediction_prints_percentages(capsys):
     assert "%)" in out
 
 
-def test_main_diagram_flag_prints_written_path_when_available(capsys):
+def test_main_diagram_flag_prints_written_path_when_rendered(capsys):
+    from factorylib.endfield.diagram import DiagramResult
+
     with patch(
-        "factorylib.endfield.cli.generate_diagram", return_value="/tmp/plan.png"
+        "factorylib.endfield.cli.generate_diagram",
+        return_value=DiagramResult(path="/tmp/plan.png", rendered=True),
     ):
         rc = main(["--diagram", "/tmp/plan.png"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "Diagram written to /tmp/plan.png" in out
+
+
+def test_main_diagram_flag_prints_dot_fallback_notice_when_not_rendered(capsys):
+    """When graphviz is installed but its system `dot` executable isn't,
+    generate_diagram falls back to writing raw .dot source instead of an
+    image -- the CLI must say so, not claim a rendered diagram exists."""
+    from factorylib.endfield.diagram import DiagramResult
+
+    with patch(
+        "factorylib.endfield.cli.generate_diagram",
+        return_value=DiagramResult(path="/tmp/plan.dot", rendered=False),
+    ):
+        rc = main(["--diagram", "/tmp/plan.png"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "/tmp/plan.dot" in out
+    assert "dot` executable isn't" in out
 
 
 def test_main_diagram_flag_prints_skip_notice_when_graphviz_unavailable(capsys):
@@ -467,8 +504,81 @@ def test_main_diagram_flag_prints_skip_notice_when_graphviz_unavailable(capsys):
     assert "skipped diagram" in out
 
 
-def test_main_without_diagram_flag_prints_nothing_about_diagrams(capsys):
-    rc = main([])
+def test_main_no_diagram_flag_prints_nothing_about_diagrams(capsys):
+    """--no-diagram must suppress even the source-checkout default path
+    (this test suite itself runs from a source checkout, so without
+    --no-diagram the default would kick in and actually try to render)."""
+    rc = main(["--no-diagram"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "diagram" not in out.lower()
+
+
+def test_main_no_diagram_flag_overrides_explicit_diagram_path(capsys):
+    with patch("factorylib.endfield.cli.generate_diagram") as mock_generate:
+        rc = main(["--diagram", "/tmp/plan.png", "--no-diagram"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "diagram" not in out.lower()
+    mock_generate.assert_not_called()
+
+
+def test_main_uses_default_diagram_path_when_neither_flag_given(capsys):
+    """Without --diagram or --no-diagram, main() should fall back to
+    _default_diagram_path() (mocked here to a fake path so this doesn't
+    depend on whether this environment is actually a source checkout)."""
+    from factorylib.endfield.diagram import DiagramResult
+
+    with (
+        patch(
+            "factorylib.endfield.cli._default_diagram_path",
+            return_value="/tmp/fake_default/plan.png",
+        ),
+        patch(
+            "factorylib.endfield.cli.generate_diagram",
+            return_value=DiagramResult(
+                path="/tmp/fake_default/plan.png", rendered=True
+            ),
+        ) as mock_generate,
+    ):
+        rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Diagram written to /tmp/fake_default/plan.png" in out
+    assert mock_generate.call_args.args[-1] == "/tmp/fake_default/plan.png"
+
+
+def test_main_explicit_diagram_path_overrides_default(capsys):
+    from factorylib.endfield.diagram import DiagramResult
+
+    with (
+        patch(
+            "factorylib.endfield.cli._default_diagram_path",
+            return_value="/tmp/fake_default/plan.png",
+        ),
+        patch(
+            "factorylib.endfield.cli.generate_diagram",
+            return_value=DiagramResult(path="/tmp/explicit.png", rendered=True),
+        ) as mock_generate,
+    ):
+        rc = main(["--diagram", "/tmp/explicit.png"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Diagram written to /tmp/explicit.png" in out
+    assert mock_generate.call_args.args[-1] == "/tmp/explicit.png"
+
+
+def test_default_diagram_path_is_none_outside_a_source_checkout():
+    from factorylib.endfield.cli import _default_diagram_path
+
+    with patch("os.path.isdir", return_value=False):
+        assert _default_diagram_path() is None
+
+
+def test_default_diagram_path_is_output_dir_inside_a_source_checkout():
+    """This test suite itself runs from a real source checkout (this
+    repo has a .git directory), so the real (unmocked) function should
+    resolve to the real default."""
+    from factorylib.endfield.cli import _DEFAULT_DIAGRAM_PATH, _default_diagram_path
+
+    assert _default_diagram_path() == _DEFAULT_DIAGRAM_PATH

@@ -4,6 +4,7 @@ any tied alternatives (see factorylib.alternatives)."""
 from __future__ import annotations
 
 import argparse
+import os
 import random
 
 import numpy as np
@@ -46,6 +47,28 @@ from factorylib.search import SearchConfig
 # mechanism, matching the spec's own framing ("even 0.5/min of Cuprium
 # Component is already ample").
 _GEAR_MIN_TARGET_REFERENCE = 0.5
+
+_DEFAULT_DIAGRAM_PATH = os.path.join("output", "wuling-diagram.png")
+
+
+def _default_diagram_path() -> str | None:
+    """_DEFAULT_DIAGRAM_PATH, but only when running from a source
+    checkout -- detected by walking up from this file looking for a
+    .git directory. A wheel install's site-packages copy has no .git
+    anywhere above it, so this correctly stays inactive there: nobody
+    installing factorylib via pip expects running its CLI to write a
+    file into their current directory as a side effect. Explicit
+    --diagram PATH always works regardless of how factorylib was
+    installed; this only governs the *default* when neither --diagram
+    nor --no-diagram is given."""
+    path = os.path.dirname(os.path.abspath(__file__))
+    while True:
+        if os.path.isdir(os.path.join(path, ".git")):
+            return _DEFAULT_DIAGRAM_PATH
+        parent = os.path.dirname(path)
+        if parent == path:
+            return None
+        path = parent
 
 
 def _parse_float_list(s: str) -> np.ndarray:
@@ -246,9 +269,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATH",
         help="write a Graphviz diagram of the refined solution's active formulas "
-        "to PATH (format inferred from its extension, e.g. plan.png); skipped "
-        "with a notice if the graphviz package or its `dot` executable isn't "
-        "installed",
+        "to PATH (format inferred from its extension, e.g. plan.png); if "
+        "neither this nor --no-diagram is given and factorylib is running from "
+        f"a source checkout, defaults to {_DEFAULT_DIAGRAM_PATH} (gitignored); "
+        "falls back to writing raw .dot source if graphviz's system `dot` "
+        "executable isn't installed (see README.md)",
+    )
+    parser.add_argument(
+        "--no-diagram",
+        action="store_true",
+        help="skip writing a diagram entirely, including the source-checkout "
+        f"default ({_DEFAULT_DIAGRAM_PATH}) -- overrides --diagram",
     )
     return parser
 
@@ -743,21 +774,28 @@ def main(argv: list[str] | None = None) -> int:
             f"{_fmt(delivery_config.box_capacity)} needed to fill a box"
         )
 
-    if args.diagram:
-        written = generate_diagram(
+    diagram_path = None if args.no_diagram else args.diagram or _default_diagram_path()
+    if diagram_path:
+        result = generate_diagram(
             rates_by_name,
             formulas,
             RESOURCE_NAMES,
             RESOURCE_LABELS,
             FORMULA_LABELS,
-            args.diagram,
+            diagram_path,
         )
-        if written:
-            print(f"\nDiagram written to {written}")
+        if result is None:
+            print(
+                f"\n(skipped diagram: install the graphviz package to write one "
+                f"to {diagram_path})"
+            )
+        elif result.rendered:
+            print(f"\nDiagram written to {result.path}")
         else:
             print(
-                f"\n(skipped diagram: install the graphviz package and its `dot` "
-                f"executable to write one to {args.diagram})"
+                f"\nGraphviz package installed but its system `dot` executable "
+                f"isn't -- wrote raw .dot source to {result.path} instead (see "
+                f"README.md; install `dot` and rerun to render an image)"
             )
 
     return 0

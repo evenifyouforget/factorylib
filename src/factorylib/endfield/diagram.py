@@ -130,10 +130,21 @@ def generate_diagram(
     )
 
     base, ext = os.path.splitext(path)
+    dirname = os.path.dirname(base or path)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
     dot.format = ext.lstrip(".") or "png"
     try:
         rendered_path = dot.render(base or path, cleanup=True)
         return DiagramResult(path=rendered_path, rendered=True)
     except graphviz.ExecutableNotFound:
+        # render() already wrote its source to `base or path` (the
+        # default source filename) before discovering `dot` is missing
+        # -- cleanup=True only deletes that after a *successful* render,
+        # so it's left behind here. Remove that half-finished duplicate
+        # before writing our own explicit .dot fallback via save().
+        leftover_source = base or path
+        if os.path.exists(leftover_source):
+            os.remove(leftover_source)
         source_path = dot.save(f"{base or path}.dot")
         return DiagramResult(path=source_path, rendered=False)

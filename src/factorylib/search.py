@@ -570,6 +570,19 @@ def simulated_annealing(
 
         temperature *= config.cooling_rate
 
+    # Every accepted proposal was already gated by _integer_rates_valid
+    # above, so this should never fire -- but it's cheap, and it turns a
+    # future regression (e.g. a new move type that forgets the gate)
+    # into a loud, immediate failure instead of a silently-wrong plan
+    # (see the module docstring's toggle_integer entry for the real bug
+    # this class of check would have caught much sooner).
+    assert _integer_rates_valid(best, formulas), (
+        "simulated_annealing produced a fractional Formula.integer rate "
+        "despite _integer_rates_valid gating every move -- this is a bug "
+        "in search.py itself, not a proposal that should have been "
+        "rejected"
+    )
+
     return SearchOutcome(
         rates=best,
         fitness=best_fitness,
@@ -634,6 +647,11 @@ def scipy_dual_annealing(
         # did); fall back to the starting point rather than return an
         # invalid plan.
         rates = _snap_integer_rates(np.asarray(initial_rates, dtype=float), formulas)
+
+    assert _integer_rates_valid(rates, formulas), (
+        "scipy_dual_annealing produced a fractional Formula.integer rate "
+        "despite _snap_integer_rates -- this is a bug in search.py itself"
+    )
 
     initial = np.asarray(initial_rates, dtype=float)
     return SearchOutcome(

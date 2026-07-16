@@ -9,7 +9,7 @@ from factorylib.endfield.pp_goals import (
     pp_supply,
 )
 from factorylib.endfield.refine import refine
-from factorylib.endfield.wuling import WulingConfig, search
+from factorylib.endfield.wuling import POWER_YIELD, WulingConfig, search
 from factorylib.search import SearchConfig
 
 
@@ -130,3 +130,38 @@ def test_refine_dollar_output_matches_rates_dot_dollar_earner_outputs():
         dtype=float,
     )
     assert np.isclose(result.dollar_output, result.rates @ outputs)
+
+
+def test_refine_dollar_output_exceeds_target_on_1p2e_full():
+    """Regression: with satisfaction_tiers' old pp_decay=0.15 default,
+    dollar's post-ramp tiers decayed to ~3.4 pp/$ -- just under the ~6.7
+    pp/$ needed to ever outbid power's tail tier for another unit of
+    shared battery capacity, so the search deterministically settled at
+    EXACTLY 100% of the dollar target across every seed and iteration
+    count tried (0..60000), even though the $-only LP baseline shows
+    more is physically available. Confirmed via direct CLI testing this
+    looked wrong ("massively overcommits batteries to power... doesn't
+    produce any excess sellable goods"). pp_decay=0.20 (see
+    satisfaction_tiers' own docstring for the concrete numbers) fixes
+    this: dollar output should exceed its target, not just equal it,
+    while power/delivery/some Gear Components remain satisfied too."""
+    config = WulingConfig()
+    base = search(config)
+    pp_goals = PPGoals()
+    result = refine(
+        base, config, pp_goals, SearchConfig(iterations=6000, seed=0), backend="sa"
+    )
+
+    assert result.dollar_output > pp_goals.dollar_target
+
+    rates = dict(zip(result.formula_names, result.rates))
+    power = sum(rate * POWER_YIELD.get(name, 0.0) for name, rate in rates.items())
+    quota = sum(
+        rate
+        for name, rate in rates.items()
+        if name.startswith("delivery_quota_from_") and rate > 1e-9
+    )
+    assert power > pp_goals.power_target
+    assert quota > pp_goals.delivery_jobs_per_day
+    assert rates.get("cuprium_component", 0.0) > 0.0
+    assert rates.get("xiranite_component", 0.0) > 0.0

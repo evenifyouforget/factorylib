@@ -62,6 +62,27 @@ def test_satisfaction_tiers_pp_per_unit_strictly_decreasing():
     assert all(a > b for a, b in zip(pps, pps[1:]))
 
 
+def test_satisfaction_tiers_soft_tier_stays_above_cross_goal_breakeven():
+    """Regression for a real bug found via CLI testing: with the old
+    pp_decay=0.15 default, dollar's soft tier decayed to ~3.4 pp/$ --
+    just under the ~6.7 pp/$ needed to ever outbid power's tail tier for
+    a shared physical resource (battery output split between selling
+    and power generation, 1.5 batteries -> 3200 W vs 6 batteries -> $324
+    -- see pp_goals.satisfaction_tiers' own docstring for the derivation)
+    once each goal's own ramp was satisfied -- so the search
+    deterministically settled at EXACTLY 100% of the dollar target
+    across every seed and iteration count tried, never claiming
+    physically-available extra $ output. This doesn't hardcode the
+    exact 6.7 breakeven (that's specific to this game's battery
+    economics, which belong in wuling.py, not here) -- it guards the
+    weaker, still-meaningful invariant that the default curve's soft
+    tier stays above a reasonable floor, so nobody re-introduces the
+    original problem by quietly making pp_decay steeper again."""
+    tiers = satisfaction_tiers(1090.0, soft_cap_ratio=1.20, hard_cap_ratio=3.00)
+    soft_pp = tiers[3][0]
+    assert soft_pp > 6.7
+
+
 def test_satisfaction_tiers_reward_plateaus_past_hard_cap():
     """The concrete sanity check: build a curve with soft_cap_ratio=105%,
     hard_cap_ratio=120%, then confirm the maximum achievable reward is

@@ -51,6 +51,29 @@ penalty: a player never builds a physical belt for "dollar_flow" or
 "delivery_quota_flow", so pricing their fractions the way real recipe
 flows are priced would be pricing something that isn't a real
 throughput concern at all.
+
+A concave tier list (strictly decreasing pp/unit, required so a plain
+$-maximizing LP fills them in the intended low-to-high order) can only
+ever express *diminishing* marginal value -- there's no way for a later,
+independent tier to be worth MORE than an earlier one without the LP
+just skipping straight to it, breaking "reach the target first". This
+matters whenever two goals' tiers compete for the same shared physical
+resource (e.g. battery output split between selling and power, once
+both goals' ramps are otherwise satisfied): if one goal's post-target
+tiers decay to a near-zero pp/unit before the other goal's tiers
+plateau, the search will never trade the first goal's spare capacity
+for the second's, however small the second's own marginal value is,
+simply because "near-zero" still beats "literally zero" for the goal
+that's already maxed out. satisfaction_tiers' pp_decay default (0.20)
+is tuned to keep enough residual value in a goal's post-ramp tiers to
+stay competitive for shared resources in exactly this situation (see
+its own docstring for the concrete dollar-vs-power numbers) -- a much
+simpler fix than restructuring the tiers into a prerequisite-gated
+chain (a Satisfaction Point -> integer "Fulfilled" gate -> a formula
+that only unlocks once the gate is met, which *can* express a genuinely
+increasing marginal value right after a threshold, at the cost of a
+real bookkeeping resource per goal), which wasn't needed once the decay
+rate itself was the actual bottleneck.
 """
 
 from __future__ import annotations
@@ -162,7 +185,7 @@ def satisfaction_tiers(
     hard_cap_ratio: float,
     n_ramp_tiers: int = 3,
     first_pp: float = 1000.0,
-    pp_decay: float = 0.15,
+    pp_decay: float = 0.20,
     cap_alpha: float = 0.6,
     tail_decay: float = 0.05,
 ) -> list[tuple[float, float]]:
@@ -183,6 +206,24 @@ def satisfaction_tiers(
     Soft Satisfaction Goal (e.g. sellable goods): both ratios much
     larger (e.g. 1.20/3.00) -- overshoot keeps mattering for a long
     stretch before finally being capped.
+
+    pp_decay=0.20 (not gentler, not steeper) is a real constraint, not an
+    aesthetic choice: every tier past the ramp chains its pp/unit off the
+    previous one (soft_pp = ramp_pps[-1] * pp_decay), so this is also
+    what determines how much value survives to compete with OTHER goals'
+    tiers for shared physical resources (e.g. battery output split
+    between selling and power) once a goal's ramp is fully satisfied.
+    With n_ramp_tiers=3, pp_decay=0.15 left dollar's soft tier worth only
+    ~3.4 pp/$ -- just under the ~6.7 pp/$ needed to ever outbid power's
+    tail tier for another unit of battery capacity, so the search never
+    pushed dollar output past exactly 100% even though more was
+    physically available (see refine.py's module docstring and
+    test_refine.py's regression test for this). 0.20 clears that bar
+    with headroom; a plain independent tier can only ever express
+    *diminishing* marginal value (an LP always fills the single
+    highest-value option first), so this is the only lever available
+    without restructuring the tiers into a prerequisite-gated chain (see
+    the module docstring's note on why that's not needed here).
     """
     ramp_widths = _geometric_split(target, n_ramp_tiers, cap_alpha)
     ramp_pps = _geometric_decay(first_pp, n_ramp_tiers, pp_decay)
