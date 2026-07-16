@@ -4,17 +4,21 @@ with the actual items/min flow between them -- so a plan reads as an
 actual factory layout instead of an abstract list of rates and a
 separate material-balance listing.
 
-Degrades gracefully if the `graphviz` Python package isn't installed, or
-if it's installed but the system `dot` executable isn't on PATH (the
-common case: `pip install graphviz` alone only installs the thin Python
-wrapper, not the actual Graphviz binaries) -- both cases return None
-instead of raising, so a missing optional dependency never breaks the
-CLI.
+Degrades gracefully if the `graphviz` Python package isn't installed at
+all (returns None) -- but if it's installed and only the system `dot`
+executable is missing from PATH (the common case: `pip install
+graphviz`/the "diagram" extra only installs the thin Python wrapper, not
+the actual Graphviz binaries, which aren't distributed on PyPI at all
+and must come from the OS package manager -- see README.md), the raw
+`.dot` source is written instead of the rendered image: still a usable
+artifact (paste it into any online Graphviz viewer, or render it later
+once `dot` is installed), rather than nothing at all.
 """
 
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 
 from factorylib.optimize import Formula
 
@@ -22,6 +26,22 @@ try:
     import graphviz
 except ImportError:
     graphviz = None
+
+
+@dataclass
+class DiagramResult:
+    """Result of generate_diagram().
+
+    Attributes:
+        path: the file actually written.
+        rendered: True if `path` is the rendered image itself; False if
+            it's the raw `.dot` source instead (the system `dot`
+            executable wasn't available to render it -- see module
+            docstring).
+    """
+
+    path: str
+    rendered: bool
 
 
 def _build_graph(
@@ -88,11 +108,17 @@ def generate_diagram(
     resource_labels: dict[str, str],
     formula_labels: dict[str, str],
     path: str,
-) -> str | None:
+) -> DiagramResult | None:
     """Render a plan's active formulas and the materials flowing between
     them to `path` (format inferred from its extension, "png" if none is
-    given). Returns the path actually written, or None if the `graphviz`
-    package or its `dot` executable isn't available.
+    given).
+
+    Returns None only if the `graphviz` Python package itself isn't
+    installed, or the plan has no active formulas at all. If the
+    package is present but the system `dot` executable isn't (see
+    module docstring), falls back to writing the raw `.dot` source next
+    to `path` instead (DiagramResult.rendered=False) rather than
+    producing nothing.
     """
     if graphviz is None:
         return None
@@ -106,6 +132,8 @@ def generate_diagram(
     base, ext = os.path.splitext(path)
     dot.format = ext.lstrip(".") or "png"
     try:
-        return dot.render(base or path, cleanup=True)
+        rendered_path = dot.render(base or path, cleanup=True)
+        return DiagramResult(path=rendered_path, rendered=True)
     except graphviz.ExecutableNotFound:
-        return None
+        source_path = dot.save(f"{base or path}.dot")
+        return DiagramResult(path=source_path, rendered=False)

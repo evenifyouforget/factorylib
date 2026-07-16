@@ -90,7 +90,7 @@ def find_alternatives(
                 new_output = max(0.0, f.output + dv)
                 if new_output != f.output:
                     changed = True
-                perturbed.append(Formula(f.consumption, new_output, f.limit))
+                perturbed.append(Formula(f.consumption, new_output, f.limit, f.integer))
             if not changed:
                 continue
 

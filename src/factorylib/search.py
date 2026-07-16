@@ -3,7 +3,7 @@
 Starting from an LP-optimal solution (which maximizes raw $ only), search
 nearby plans for better *fitness* -- a different, generally nonconvex
 objective (see factorylib.endfield.goals.fitness) that also rewards simple
-fractions and secondary goals. Three moves:
+fractions and secondary goals. Five moves:
 
   - round_down: replace one formula's rate with a simpler (smaller-
     denominator) fraction no larger than its current value, freeing up
@@ -29,6 +29,43 @@ fractions and secondary goals. Three moves:
     from the start, or freed by a round_down move), increase some
     formula's rate -- new or already active -- by as much as the
     remaining slack and its own run-rate limit allow.
+  - shift: reallocate an already-fully-consumed resource between two
+    formulas that compete for it (e.g. a battery split between selling
+    and power). round_down can't propose this by itself when the donor
+    formula's rate is already at its simplest denominator (nothing
+    smaller to try), and allocate_slack can't either, since there's no
+    *unused* slack to hand out -- the resource is fully claimed by the
+    donor already. shift picks a random donor/target pair that both
+    positively consume some shared resource, shrinks the donor down to a
+    nearby "nice" denominator, and hands everything that frees (plus any
+    pre-existing slack) to the target -- also snapped to a nice
+    denominator -- bounded by the target's own run-rate limit. See
+    _shift_move.
+  - pinned_lp: commit a random handful of currently-active formulas'
+    rates as lower bounds ("keep at least this many multiples running"),
+    then re-solve the raw $-maximization LP for every formula subject to
+    those floors. Unlike the other four moves, which each nudge one or
+    two formulas at a time, this re-optimizes the *entire* remaining
+    allocation in one exact step -- it can reach reallocations that no
+    sequence of single-formula nudges would ever stumble into, at the
+    cost of the freshly-reoptimized formulas generally landing on
+    arbitrary (not "nice") fractions, which the other moves then get a
+    chance to clean up on subsequent iterations. See _pinned_lp_move.
+  - toggle_integer: flip one Formula.integer=True formula fully on (its
+    full `limit` multiples) or fully off (zero). Formula.integer covers
+    both a genuine MILP-style integer count (e.g. wuling.py's
+    xiranite_forge_alloc, any whole number of forges 0..max_forges) and a
+    limit=1 all-or-nothing bonus (e.g.
+    factorylib.endfield.pp_goals.hard_satisfaction_bonus's "reached the
+    goal in one go" bonuses) -- either way, only whole-number rates are
+    ever valid, never e.g. 0.7 multiples. The other five moves all
+    operate on plain continuous rates and have no notion of this
+    invariant, so _integer_rates_valid rejects any of their proposals
+    that would leave an integer formula fractional; toggle_integer (plus
+    pinned_lp's MILP re-solve, now that lp_with_floor preserves the
+    integer flag) is how the search actually reaches a nonzero
+    whole-number rate for one of these instead of just getting stuck
+    rejecting fractional proposals forever. See _toggle_integer_move.
 
 The fitness landscape from combining $ output with a denominator/prime
 complexity penalty is nonconvex (a simpler nearby fraction can score
@@ -49,11 +86,17 @@ from typing import Callable
 
 import numpy as np
 
-from factorylib.optimize import Formula
+from factorylib.optimize import Formula, maximize_dollar
 
 _NICE_DENOMINATORS = (1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256)
 
 FitnessFn = Callable[[np.ndarray], float]
+
+
+MoveFn = Callable[
+    [np.ndarray, list[Formula], np.ndarray, np.ndarray, random.Random],
+    "np.ndarray | None",
+]
 
 
 @dataclass
@@ -70,6 +113,15 @@ class SearchConfig:
             all built from small prime factors (2s, 3s) since those are
             the easiest to physically split -- see factorylib.simplicity.
         seed: RNG seed, for reproducibility.
+        extra_moves: additional proposal functions, each
+            (rates, formulas, consumption, supply, rng) -> new_rates or
+            None, given equal weight alongside the five built-in moves.
+            Lets a domain layer (e.g. factorylib.endfield.refine) inject
+            moves that need knowledge search.py deliberately doesn't have
+            -- e.g. targeting a specific known goal minimum on a
+            currently-zero-$-output formula, which no $-only move (like
+            pinned_lp) would ever choose on its own. See lp_with_floor
+            for the shared mechanic such a move would typically use.
     """
 
     iterations: int = 2000
@@ -77,6 +129,7 @@ class SearchConfig:
     cooling_rate: float = 0.995
     denominators: tuple[int, ...] = _NICE_DENOMINATORS
     seed: int | None = None
+    extra_moves: tuple[MoveFn, ...] = ()
 
 
 @dataclass
@@ -127,8 +180,21 @@ def headroom_loss(
 
 
 def _round_down_move(
-    rates: np.ndarray, denominators: tuple[int, ...], rng: random.Random
+    rates: np.ndarray,
+    formulas: list[Formula],
+    consumption: np.ndarray,
+    supply: np.ndarray,
+    denominators: tuple[int, ...],
+    rng: random.Random,
 ) -> np.ndarray | None:
+    """Round a nonzero rate DOWN to a simpler nearby fraction.
+
+    Shrinking a formula always frees the resources it *consumes* (positive
+    consumption coefficients), but if it's also a net *producer* of some
+    resource (negative coefficient) that a different, already-fixed
+    formula depends on, shrinking it can starve that other consumer --
+    verify network-wide feasibility rather than assuming a reduction is
+    always safe."""
     nonzero = [i for i, r in enumerate(rates) if r > 1e-9]
     if not nonzero:
         return None
@@ -144,6 +210,8 @@ def _round_down_move(
         return None
     new_rates = rates.copy()
     new_rates[i] = new_r
+    if np.any(consumption @ new_rates > supply + 1e-9):
+        return None
     return new_rates
 
 
@@ -213,6 +281,239 @@ def _allocate_slack_move(
     return new_rates
 
 
+def _shift_move(
+    rates: np.ndarray,
+    formulas: list[Formula],
+    consumption: np.ndarray,
+    supply: np.ndarray,
+    denominators: tuple[int, ...],
+    rng: random.Random,
+) -> np.ndarray | None:
+    """Shrink one formula (the donor) and hand whatever that frees to a
+    different formula (the target) that competes with it for the same
+    resource. Neither round_down (only ever proposes smaller
+    denominators of the donor's *own* rate, not a full reallocation) nor
+    allocate_slack (only spends slack that's already unused) can express
+    this: if a resource is already 100% claimed by one consumer, a target
+    formula that also needs it can never be grown by those two moves
+    alone, however good the trade would be.
+
+    The donor is always shrunk down to one of the "nice" denominators
+    (like round_down), never by an arbitrary continuous amount -- a raw
+    random fraction of the donor's rate would almost never land on a
+    simple fraction itself, silently reintroducing the same complexity
+    this whole search exists to avoid."""
+    n = len(formulas)
+    if n < 2:
+        return None
+    j = rng.randrange(n)
+    col_j = consumption[:, j]
+    shared = [k for k in range(len(col_j)) if col_j[k] > 1e-12]
+    if not shared:
+        return None
+    donors = [
+        i
+        for i in range(n)
+        if i != j and rates[i] > 1e-9 and any(consumption[k, i] > 1e-12 for k in shared)
+    ]
+    if not donors:
+        return None
+    i = rng.choice(donors)
+    r = float(rates[i])
+    d = rng.choice(denominators)
+    # Step down to the *previous* 1/d multiple below r, not just floor(r*d)/d
+    # -- when r is itself already an exact multiple of 1/d (the common case
+    # for a donor sitting at a "nice", already-simple rate, e.g. an
+    # integer), floor(r*d)/d == r and would never actually shrink it.
+    new_r = math.floor(r * d - 1e-9) / d
+    if new_r >= r - 1e-12:
+        return None
+    delta_i = r - new_r
+
+    trial_rates = rates.copy()
+    trial_rates[i] -= delta_i
+    # Shrinking the donor is only guaranteed safe for the resource(s) it
+    # shares with the target (freed, not tightened). If the donor is also
+    # a net producer of some *other* resource (negative coefficient) that
+    # a third formula already fully relies on, this reduction can starve
+    # that dependency -- same risk _round_down_move guards against.
+    if np.any(consumption @ trial_rates > supply + 1e-9):
+        return None
+    remaining_slack = supply - consumption @ trial_rates
+    bounds = [remaining_slack[k] / col_j[k] for k in shared]
+    max_delta_j = min(bounds)
+    max_delta_j = min(max_delta_j, formulas[j].limit - trial_rates[j])
+    if not math.isfinite(max_delta_j) or max_delta_j <= 1e-9:
+        return None
+    # Snap the target's new rate to a nice denominator too, rather than
+    # handing it the exact (generally ugly) freed amount -- same
+    # reasoning as the donor above, just rounding up instead of down
+    # (mirrors _round_up_move's "largest nice fraction that still fits").
+    upper_bound = trial_rates[j] + max_delta_j
+    d_j = rng.choice(denominators)
+    new_j = math.floor(upper_bound * d_j) / d_j
+    if new_j <= trial_rates[j] + 1e-12:
+        return None
+    trial_rates[j] = new_j
+    if np.any(consumption @ trial_rates > supply + 1e-9):
+        return None
+    return trial_rates
+
+
+def _integer_rates_valid(
+    rates: np.ndarray, formulas: list[Formula], tol: float = 1e-6
+) -> bool:
+    """True if every Formula.integer=True formula's rate is (within tol) a
+    whole number of multiples, in [0, limit] -- Formula.integer covers
+    two shapes: genuine MILP-style integer choices with limit > 1 (e.g.
+    wuling.py's xiranite_forge_alloc, 0..max_forges forges), where any
+    whole count is valid, and hard_satisfaction_bonus-style limit=1
+    all-or-nothing bonuses, where 0 or 1 are the only whole counts
+    possible anyway -- so a single "is this a whole number" check covers
+    both without special-casing the limit. round_down/round_up/
+    allocate_slack/shift/pinned_lp all operate on plain continuous rates
+    with no notion of this flag, so this is checked centrally on every
+    proposal rather than taught to each move individually -- a proposal
+    that fails this is rejected outright, same as one that violates
+    supply."""
+    for rate, f in zip(rates, formulas):
+        if not f.integer:
+            continue
+        if rate < -tol or rate > f.limit + tol:
+            return False
+        if abs(rate - round(rate)) > tol:
+            return False
+    return True
+
+
+def _snap_integer_rates(rates: np.ndarray, formulas: list[Formula]) -> np.ndarray:
+    """Round every Formula.integer=True dimension to the nearest whole
+    number of multiples, clipped to [0, limit] -- defensive sanitization
+    for initial_rates, which may come from a caller that never
+    guaranteed the whole-number invariant itself."""
+    rates = rates.copy()
+    for i, f in enumerate(formulas):
+        if not f.integer:
+            continue
+        snapped = round(rates[i])
+        if math.isfinite(f.limit):
+            snapped = min(snapped, f.limit)
+        rates[i] = max(snapped, 0.0)
+    return rates
+
+
+def _toggle_integer_move(
+    rates: np.ndarray,
+    formulas: list[Formula],
+    consumption: np.ndarray,
+    supply: np.ndarray,
+    rng: random.Random,
+) -> np.ndarray | None:
+    """Flip one Formula.integer=True formula fully on (its full `limit`
+    multiples) or fully off (zero) -- see module docstring's
+    toggle_integer entry. For a limit=1 all-or-nothing bonus (see
+    factorylib.endfield.pp_goals.hard_satisfaction_bonus) this is the
+    only move that can turn it on at all, since allocate_slack only
+    reaches the full limit when slack happens to cover it exactly and
+    round_up/round_down have no smaller-denominator candidate to try
+    from 0 or from an already-whole rate. For a larger-limit integer
+    formula (e.g. wuling.py's xiranite_forge_alloc), it's a coarse
+    on/off jump alongside pinned_lp's finer-grained MILP re-solves.
+
+    Turning the formula fully OFF is not automatically safe: like
+    _round_down_move/_shift_move, if it's also a net *producer* of some
+    resource (negative consumption coefficient -- e.g.
+    heavy_xiranite_forge_alloc producing hx_forge_capacity) that a
+    different, already-fixed formula depends on, dropping it to zero can
+    starve that dependency -- verify network-wide feasibility rather
+    than assuming it's always safe to switch off."""
+    candidates = [
+        i for i, f in enumerate(formulas) if f.integer and math.isfinite(f.limit)
+    ]
+    if not candidates:
+        return None
+    i = rng.choice(candidates)
+    new_rates = rates.copy()
+    new_rates[i] = 0.0 if rates[i] > 1e-6 else formulas[i].limit
+    if np.any(consumption @ new_rates > supply + 1e-9):
+        return None
+    return new_rates
+
+
+def lp_with_floor(
+    formulas: list[Formula],
+    consumption: np.ndarray,
+    supply: np.ndarray,
+    floor: np.ndarray,
+) -> np.ndarray | None:
+    """Re-solve the raw $-maximization LP for every formula, each with a
+    lower bound of floor[i] ("keep at least this many multiples
+    running"), given whatever supply remains after crediting the floors'
+    own production/consumption. Returns None if the floor alone would
+    already need more of some resource than the rest of the network can
+    ever supply -- e.g. a floor on a formula that consumes a purely-
+    internal, zero-external-supply resource without also crediting
+    whatever produces it.
+
+    Shared by _pinned_lp_move (floors built from the plan's own
+    currently-active rates) and by domain-specific moves elsewhere (e.g.
+    factorylib.endfield.refine's goal-targeted move, which floors a
+    formula at a known goal minimum even when it's currently at zero --
+    something no raw-$ re-solve would ever choose on its own, since a
+    zero-$-output formula never earns its way into the LP's solution by
+    itself)."""
+    n = len(formulas)
+    shifted_supply = supply - consumption @ floor
+    if np.any(shifted_supply < -1e-9):
+        return None
+    shifted_supply = np.maximum(shifted_supply, 0.0)
+    shifted_formulas = [
+        Formula(
+            consumption=formulas[i].consumption,
+            output=formulas[i].output,
+            limit=(
+                formulas[i].limit - floor[i]
+                if math.isfinite(formulas[i].limit)
+                else math.inf
+            ),
+            integer=formulas[i].integer,
+        )
+        for i in range(n)
+    ]
+    result = maximize_dollar(shifted_supply, shifted_formulas)
+    if result.status != "optimal":
+        return None
+    new_rates = floor + result.formula_rates
+    if np.any(consumption @ new_rates > supply + 1e-6):
+        return None
+    return new_rates
+
+
+def _pinned_lp_move(
+    rates: np.ndarray,
+    formulas: list[Formula],
+    consumption: np.ndarray,
+    supply: np.ndarray,
+    rng: random.Random,
+    max_pinned: int = 3,
+) -> np.ndarray | None:
+    """Commit a random handful of currently-active formulas' rates as
+    lower bounds, then re-solve via lp_with_floor. This is conservative,
+    not exhaustive: some pinned subsets that could actually work get
+    rejected too (see lp_with_floor), which just means this proposal is
+    skipped in favor of another on the next iteration."""
+    n = len(formulas)
+    active = [i for i in range(n) if rates[i] > 1e-9]
+    if not active:
+        return None
+    k = rng.randint(1, min(max_pinned, len(active)))
+    pinned = rng.sample(active, k)
+    floor = np.zeros(n)
+    for i in pinned:
+        floor[i] = rates[i]
+    return lp_with_floor(formulas, consumption, supply, floor)
+
+
 def simulated_annealing(
     supply: np.ndarray,
     formulas: list[Formula],
@@ -228,22 +529,35 @@ def simulated_annealing(
     supply = np.asarray(supply, dtype=float)
 
     initial = np.asarray(initial_rates, dtype=float).copy()
-    current = initial.copy()
+    current = _snap_integer_rates(initial, formulas)
     current_fitness = fitness_fn(current)
     best, best_fitness = current.copy(), current_fitness
+
+    denominators = config.denominators
+    move_fns: list[Callable[[np.ndarray, random.Random], np.ndarray | None]] = [
+        lambda r, rg: _round_down_move(
+            r, formulas, consumption, supply, denominators, rg
+        ),
+        lambda r, rg: _round_up_move(
+            r, formulas, consumption, supply, denominators, rg
+        ),
+        lambda r, rg: _allocate_slack_move(r, formulas, consumption, supply, rg),
+        lambda r, rg: _shift_move(r, formulas, consumption, supply, denominators, rg),
+        lambda r, rg: _pinned_lp_move(r, formulas, consumption, supply, rg),
+        lambda r, rg: _toggle_integer_move(r, formulas, consumption, supply, rg),
+    ]
+    move_fns.extend(
+        (lambda mv: lambda r, rg: mv(r, formulas, consumption, supply, rg))(extra)
+        for extra in config.extra_moves
+    )
 
     temperature = config.initial_temperature
     accepted = 0
     for _ in range(config.iterations):
-        move = rng.random()
-        if move < 1 / 3:
-            proposal = _round_down_move(current, config.denominators, rng)
-        elif move < 2 / 3:
-            proposal = _round_up_move(
-                current, formulas, consumption, supply, config.denominators, rng
-            )
-        else:
-            proposal = _allocate_slack_move(current, formulas, consumption, supply, rng)
+        proposal = move_fns[rng.randrange(len(move_fns))](current, rng)
+
+        if proposal is not None and not _integer_rates_valid(proposal, formulas):
+            proposal = None
 
         if proposal is not None:
             proposal_fitness = fitness_fn(proposal)
@@ -308,11 +622,18 @@ def scipy_dual_annealing(
         x0=np.asarray(initial_rates, dtype=float),
     )
     rates = np.clip(result.x, 0.0, None)
+    # dual_annealing has no notion of Formula.integer -- snap those
+    # dimensions to the all-or-nothing invariant _integer_rates_valid
+    # expects (see module docstring's toggle_integer entry) before the
+    # feasibility check below, since snapping one up to its full limit
+    # can itself push usage over supply.
+    rates = _snap_integer_rates(rates, formulas)
     usage = consumption @ rates
     if np.any(usage > supply + 1e-6):
-        # Penalty didn't fully enforce feasibility; fall back to the
-        # starting point rather than return an invalid plan.
-        rates = np.asarray(initial_rates, dtype=float)
+        # Penalty didn't fully enforce feasibility (or integer-snapping
+        # did); fall back to the starting point rather than return an
+        # invalid plan.
+        rates = _snap_integer_rates(np.asarray(initial_rates, dtype=float), formulas)
 
     initial = np.asarray(initial_rates, dtype=float)
     return SearchOutcome(

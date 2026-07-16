@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
-from scipy.optimize import linprog
+from scipy.optimize import Bounds, LinearConstraint, linprog, milp
 
 _STATUS_MAP = {
     0: "optimal",
@@ -24,11 +24,20 @@ class Formula:
         consumption: shape (N,) float array, resource consumption per unit run.
         output: $ produced per unit run (must be >= 0).
         limit: maximum run rate; np.inf means unbounded.
+        integer: if True, this formula's rate is constrained to whole
+            multiples only (e.g. "how many Forge of the Sky units go to
+            Xiranite supply" is inherently a discrete choice, not a
+            continuous one). Mixing a handful of integer formulas among
+            otherwise-continuous ones turns maximize_dollar's LP into a
+            small MILP (see its docstring) -- solved once, exactly,
+            instead of the caller having to brute-force enumerate the
+            discrete choices itself.
     """
 
     consumption: np.ndarray
     output: float
     limit: float = field(default=np.inf)
+    integer: bool = False
 
     def __post_init__(self) -> None:
         self.consumption = np.asarray(self.consumption, dtype=float)
@@ -69,6 +78,19 @@ def maximize_dollar(
         maximize   sum_j output_j * c_j
         subject to sum_j consumption[i,j] * c_j <= supply[i]  for all i
                    0 <= c_j <= limit_j                         for all j
+
+    If any formula has integer=True, this becomes a small MILP (solved via
+    scipy.optimize.milp, branch-and-bound) instead of a plain continuous
+    LP -- e.g. a discrete allocation choice (how many Forge of the Sky
+    units go to Xiranite supply vs. Heavy Xiranite capacity; which
+    Metatransfer option to pick) can be modeled as ordinary Formula
+    entries (via a couple of extra virtual resource dimensions -- see
+    factorylib.endfield.wuling's module docstring) instead of the caller
+    having to brute-force enumerate the discrete choices in an outer
+    loop. A nice side effect: factorylib.alternatives.find_alternatives'
+    epsilon-perturbation tie-finder then also discovers ties *between*
+    discrete choices for free, the same way it already finds ties between
+    continuous formulas -- both are just Formula objects to it.
 
     Args:
         supply:   shape (N,) non-negative resource supply vector.
@@ -112,13 +134,24 @@ def maximize_dollar(
     c_obj = -np.array([f.output for f in formulas], dtype=float)
     bounds = [(0.0, None if np.isinf(f.limit) else float(f.limit)) for f in formulas]
 
-    result = linprog(
-        c_obj,
-        A_ub=consumption,
-        b_ub=supply,
-        bounds=bounds,
-        method="highs",
-    )
+    if any(f.integer for f in formulas):
+        lb = np.array([b[0] for b in bounds])
+        ub = np.array([np.inf if b[1] is None else b[1] for b in bounds])
+        integrality = np.array([1 if f.integer else 0 for f in formulas])
+        result = milp(
+            c_obj,
+            constraints=LinearConstraint(consumption, -np.inf, supply),
+            bounds=Bounds(lb, ub),
+            integrality=integrality,
+        )
+    else:
+        result = linprog(
+            c_obj,
+            A_ub=consumption,
+            b_ub=supply,
+            bounds=bounds,
+            method="highs",
+        )
 
     status_str = _STATUS_MAP.get(result.status, f"solver_status_{result.status}")
 

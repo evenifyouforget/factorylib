@@ -1,11 +1,7 @@
 from factorylib.endfield.cli import main
 from factorylib.endfield.delivery import accumulation_rates, predict_delivery_selections
-from factorylib.endfield.goals import (
-    ProductionPlan,
-    WulingGoals,
-    fitness,
-    plan_from_search_result,
-)
+from factorylib.endfield.goals import ProductionPlan, plan_from_search_result
+from factorylib.endfield.pp_goals import PPGoals, build_pp_formulas
 from factorylib.endfield.refine import RefinedResult, refine
 from factorylib.endfield.wuling import (
     SearchResult,
@@ -18,14 +14,14 @@ from factorylib.endfield.wuling import (
 )
 
 __all__ = [
+    "PPGoals",
     "ProductionPlan",
     "RefinedResult",
     "SearchResult",
     "WulingConfig",
-    "WulingGoals",
     "accumulation_rates",
     "build_formulas",
-    "fitness",
+    "build_pp_formulas",
     "main",
     "plan_from_search_result",
     "predict_delivery_selections",

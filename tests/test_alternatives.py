@@ -72,18 +72,11 @@ def test_every_alternative_matches_baseline_dollar_on_a_real_complex_system():
     this; only checking recomputed dollar_output against baseline can.
     Uses the full, unfiltered formula set (no cli.py-style exclusions)
     to exercise the worst case directly."""
-    from factorylib.endfield.wuling import (
-        XI_PER_FORGE,
-        WulingConfig,
-        build_formulas,
-        search,
-    )
+    from factorylib.endfield.wuling import WulingConfig, build_formulas, full_supply
 
     config = WulingConfig()
-    best = search(config)
     formulas = build_formulas(config)
-    formulas["hx_make"].limit = config.max_forges - best.z
-    supply = config.base_supply + best.z * XI_PER_FORGE + best.metatransfer
+    supply = full_supply(config)
 
     result = find_alternatives(
         supply, list(formulas.values()), epsilon=1e-4, max_solutions=10

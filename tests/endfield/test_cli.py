@@ -14,6 +14,26 @@ def test_main_default_prints_1p2e_full_dollar(capsys):
     assert "206735/146" in out
 
 
+def test_main_prints_dollar_for_baseline_and_fitness_for_refined(capsys):
+    """The baseline ($-only) section stays a pure $ report (the pp system
+    doesn't apply to it -- it never ran any pp-tier formula at all), but
+    the refined section -- now scored by pp minus complexity, see
+    factorylib.endfield.refine's module docstring -- reports its
+    fitness."""
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    optimal_line = next(
+        line for line in out.splitlines() if line.startswith("Optimal solution:")
+    )
+    refined_line = next(
+        line for line in out.splitlines() if "Refined solution:" in line
+    )
+    assert "fitness=" not in optimal_line
+    assert "fitness=" in refined_line
+    assert "Prosperity Points:" in out
+
+
 def test_main_with_limit_flag(capsys):
     """jincao_tea is a perfect economic substitute for ya (identical
     recipe shape/price -- see wuling.py's module docstring), so banning
@@ -64,15 +84,18 @@ def test_main_delivery_prediction_includes_unsold_goods(capsys):
     """Goods the outpost can't currently afford to buy (see the income
     breakdown) still physically accumulate, so they must be delivery-job
     candidates too, not just leftover base-resource slack. A near-zero
-    stock-bill cap forces this deterministically (which specific good
-    ends up "the" unsold one at the default cap is refine()-seed/
-    formula-set sensitive, not the thing being tested here)."""
+    stock-bill cap forces this deterministically. Which specific good(s)
+    end up "the" unsold one is refine()-seed/pp-tier-weighting sensitive
+    (not the thing being tested here), so this only checks that at least
+    one *sold* good (as opposed to a pure delivery-quota/base-resource
+    material) shows up as a delivery-job candidate -- i.e. that unsold
+    surplus really does feed into the prediction, not just leftover
+    slack."""
     rc = main(["--stock-bill-cap", "1"])
     out = capsys.readouterr().out
     assert rc == 0
     delivery_section = out[out.index("Delivery job prediction") :]
-    assert "Cuprium Part (sold)" in delivery_section
-    assert "SC Wuling Battery (sold)" in delivery_section
+    assert "(sold)" in delivery_section
 
 
 def test_main_income_breakdown_respects_stock_bill_cap_flag(capsys):
@@ -113,7 +136,7 @@ def test_main_prints_alternatives_section_when_tied(capsys):
             "--max-forges",
             "8",
             "--base-supply",
-            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
             "--no-purify-node",
             "--formula-output",
             "hp_sell=288",
@@ -159,23 +182,34 @@ def test_main_default_scenario_shows_genuine_ya_jincao_tea_tie(capsys):
 
 def test_main_prints_discrete_branch_ties(capsys):
     """Reproduces the documented hx=$19 z=7-vs-8 discrete tie from
-    test_baseline.py::test_wuling_1p2_heavy_xiranite_worth."""
+    test_baseline.py::test_wuling_1p2_heavy_xiranite_worth -- now surfaced
+    by the same "Tied alternatives" perturbation mechanism used for every
+    other tie, since z is just another (integer) formula rate to it (see
+    wuling.py::search's docstring). max-solutions is raised because, with
+    every tied vertex scoring identically, which specific alternatives
+    survive the default truncation depends on discovery order -- this
+    specific z=7 branch isn't guaranteed to be among the first few found
+    otherwise (harmless: it's still discoverable, just not always in a
+    short list -- see the completeness note in wuling.py::search's
+    docstring)."""
     rc = main(
         [
             "--max-forges",
             "8",
             "--base-supply",
-            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
             "--no-purify-node",
             "--formula-output",
             "hx_sell=114",
+            "--max-solutions",
+            "8",
         ]
     )
     out = capsys.readouterr().out
     assert rc == 0
     assert "2133/2" in out
-    assert "Tied discrete branches" in out
-    assert "z=8" in out
+    assert "Tied alternatives" in out
+    assert "Forge of the Sky (→ Heavy Xiranite capacity): [1 = 1.0000] multiples" in out
 
 
 def test_main_explicit_purify_building_and_metatransfer_flags(capsys):
@@ -184,10 +218,10 @@ def test_main_explicit_purify_building_and_metatransfer_flags(capsys):
             "--purify-building",
             # 25 Dense Originium Powder
             "--metatransfer",
-            "0,0,0,0,0,0,0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "0,0,0,0,0,0,0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
             # 25 Ferrium Ore
             "--metatransfer",
-            "0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
         ]
     )
     out = capsys.readouterr().out
@@ -238,6 +272,7 @@ def test_main_prints_headroom_warning_when_present(capsys):
     def fake_refine(base, config, goals, search_config, *, backend):
         return RefinedResult(
             rates=base.result.formula_rates,
+            pp_output=0.0,
             dollar_output=base.result.dollar_output,
             fitness=0.0,
             formula_names=base.formula_names,
@@ -268,17 +303,20 @@ def test_main_prints_power_and_delivery_goal_percentage(capsys):
     assert rc == 0
     assert "Power:" in out
     assert "% of 7000 W goal" in out
-    assert "Sandleaf Powder:" in out
-    assert "% of 15/min goal" in out
+    assert "Delivery quota:" in out
+    assert "% of 2 jobs/day goal" in out
 
 
 def test_main_warns_when_power_goal_unmet(capsys):
-    rc = main([])
+    # The search can now genuinely satisfy the *default* 7000 W target
+    # (via the SC/LC battery sell-vs-power tradeoff -- see search.py's
+    # shift move), so pin an unreachably high target here instead of
+    # relying on the default one going unmet, to exercise the shortfall
+    # warning path itself regardless of how good the search gets.
+    rc = main(["--power-target", "100000000"])
     out = capsys.readouterr().out
     assert rc == 0
-    # Default refine weights never bother producing power (see
-    # goals.py/wuling.py's module docstrings), so this is met every time.
-    assert "Warning: only 0.0% of the 7000 W power goal is met" in out
+    assert "Warning: only 0.0% of the 100000000 W power goal is met" in out
 
 
 def test_main_no_power_warning_when_goal_met(capsys):
@@ -287,6 +325,7 @@ def test_main_no_power_warning_when_goal_met(capsys):
         rates[base.formula_names.index("thermal_bank")] = 1000.0  # 50000 W
         return RefinedResult(
             rates=rates,
+            pp_output=0.0,
             dollar_output=base.result.dollar_output,
             fitness=0.0,
             formula_names=base.formula_names,
@@ -315,11 +354,14 @@ def test_main_no_stock_bill_warning_when_goal_met(capsys):
 
 
 def test_main_warns_when_delivery_goal_unmet(capsys):
+    """The $-only baseline's own rates (returned unmodified) never run
+    any delivery_quota_from_* formula at all, so delivery quota achieved
+    is naturally 0 -- no need to zero anything out explicitly."""
+
     def fake_refine(base, config, goals, search_config, *, backend):
-        rates = base.result.formula_rates.copy()
-        rates[base.formula_names.index("sandleaf_powder")] = 0.0
         return RefinedResult(
-            rates=rates,
+            rates=base.result.formula_rates,
+            pp_output=0.0,
             dollar_output=base.result.dollar_output,
             fitness=0.0,
             formula_names=base.formula_names,
@@ -330,7 +372,7 @@ def test_main_warns_when_delivery_goal_unmet(capsys):
         rc = main([])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "Sandleaf Powder delivery goal is met" in out
+    assert "delivery quota goal is met" in out
 
 
 def test_main_refine_reproducible_with_same_seed(capsys):
@@ -379,21 +421,24 @@ def test_bad_kv_format_errors():
 
 
 def _refined_dollar(out: str) -> float:
-    match = re.search(r"Refined solution: dollar=\S+ \$/min \(([\d.]+) \$/min\)", out)
+    match = re.search(r"Refined solution: dollar=\[\S+ = ([\d.]+)\] \$/min", out)
     assert match, out
     return float(match.group(1))
 
 
 def test_main_complexity_weight_flag_recovers_more_dollar(capsys):
     """Regression for the demonstrated weight sensitivity: a much lower
-    complexity_weight should recover close to LP-optimal $ output."""
+    complexity_weight should recover close to LP-optimal $ output. Uses a
+    wide gap (0.01 vs. 2.0, well past the 0.1 default) since a narrower
+    comparison isn't reliably monotonic per-seed once complexity trades
+    off against several other goal weights, not just $ alone."""
     main(["-w", "0.01", "-i", "3000", "-s", "0"])
     relaxed_dollar = _refined_dollar(capsys.readouterr().out)
 
-    main(["-w", "1.0", "-i", "3000", "-s", "0"])
-    default_dollar = _refined_dollar(capsys.readouterr().out)
+    main(["-w", "2.0", "-i", "3000", "-s", "0"])
+    strict_dollar = _refined_dollar(capsys.readouterr().out)
 
-    assert relaxed_dollar >= default_dollar
+    assert relaxed_dollar >= strict_dollar
 
 
 def test_main_delivery_prediction_prints_percentages(capsys):

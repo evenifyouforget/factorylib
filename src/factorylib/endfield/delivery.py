@@ -28,7 +28,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from factorylib.delivery import DeliverySimConfig, simulate_delivery_selections
+from factorylib.delivery import (
+    DeliverySimConfig,
+    DeliverySimResult,
+    simulate_delivery_selections,
+)
 from factorylib.endfield.wuling import (
     FORMULA_LABELS,
     GOOD_YIELD,
@@ -37,7 +41,7 @@ from factorylib.endfield.wuling import (
     RESOURCE_NAMES,
 )
 
-_LIQUID_BELT_SPEED = 120.0
+_SOLID_BELT_SPEED = 30.0
 
 # Secondary-goal formulas producing a stashable material with no
 # consumer in this model (thermal_bank produces W, not a material;
@@ -58,11 +62,16 @@ def accumulation_rates(
     depot, keyed by full label: base *solid* resources with leftover
     slack, plus any of the stashable secondary-goal goods (see module
     docstring). Liquids are never candidates -- the depot can't store
-    them."""
+    them. Neither are the virtual bookkeeping dimensions (forge_budget,
+    hx_forge_capacity, metatransfer_allowance -- see wuling.py's MILP
+    forge/metatransfer unification): they have no entry in
+    RESOURCE_BELT_SPEED at all, so excluding only liquids (belt_speed ==
+    120) let them slip through as if they were real depot-storable
+    goods; requiring belt_speed == 30 (solids) excludes them for free."""
     rates: dict[str, float] = {
         RESOURCE_LABELS.get(name, name): float(slack)
         for name, slack in zip(RESOURCE_NAMES, resource_slack)
-        if slack > 1e-9 and RESOURCE_BELT_SPEED.get(name) != _LIQUID_BELT_SPEED
+        if slack > 1e-9 and RESOURCE_BELT_SPEED.get(name) == _SOLID_BELT_SPEED
     }
     for name in _STASHABLE_GOOD_FORMULAS:
         rate = rates_by_name.get(name, 0.0) * GOOD_YIELD.get(name, 1.0)
@@ -75,7 +84,7 @@ def predict_delivery_selections(
     rates_by_name: dict[str, float],
     resource_slack: np.ndarray,
     config: DeliverySimConfig | None = None,
-) -> dict[str, int]:
+) -> DeliverySimResult:
     """Convenience: accumulation_rates() + simulate_delivery_selections()."""
     return simulate_delivery_selections(
         accumulation_rates(rates_by_name, resource_slack), config

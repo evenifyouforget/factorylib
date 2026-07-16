@@ -54,7 +54,7 @@ def test_predict_delivery_selections_dominant_good_wins():
     slack[RESOURCE_NAMES.index("sandleaf")] = 900.0  # net sandleaf surplus, items/min
     tally = predict_delivery_selections(
         {}, slack, DeliverySimConfig(simulation_days=10)
-    )
+    ).tally
     assert tally["Sandleaf Powder"] > 0
     assert tally.get("Originium Ore", 0) == 0
 

@@ -54,9 +54,30 @@ class DeliverySimConfig:
     seed: int | None = None
 
 
+@dataclass
+class DeliverySimResult:
+    """Result of simulate_delivery_selections().
+
+    Attributes:
+        tally: name -> number of times it was selected across the whole
+            simulation, for every name with a positive accumulation rate
+            (0 if it was never picked).
+        failed_jobs: number of delivery jobs that couldn't complete
+            because no material had accumulated at least box_capacity --
+            a genuine failure to meet the delivery-job requirement, not
+            merely "nothing was selected". Previously the simulator
+            picked whatever had the most anyway and subtracted
+            box_capacity regardless, silently driving that material's
+            depot amount negative instead of recognizing the job failed.
+    """
+
+    tally: dict[str, int]
+    failed_jobs: int
+
+
 def simulate_delivery_selections(
     accumulation_rates: dict[str, float], config: DeliverySimConfig | None = None
-) -> dict[str, int]:
+) -> DeliverySimResult:
     """Simulate the depot's "highest amount" auto-select behavior.
 
     Args:
@@ -67,9 +88,7 @@ def simulate_delivery_selections(
         config: simulation parameters (see DeliverySimConfig).
 
     Returns:
-        name -> number of times it was selected across the whole
-        simulation, for every name with a positive accumulation rate
-        (0 if it was never picked).
+        DeliverySimResult -- see its docstring.
     """
     config = config or DeliverySimConfig()
     rng = random.Random(config.seed)
@@ -79,18 +98,20 @@ def simulate_delivery_selections(
         if rate > 1e-9
     }
     if not daily_rates:
-        return {}
+        return DeliverySimResult(tally={}, failed_jobs=0)
 
     depot = {
         name: min(rate * config.startup_days, config.depot_capacity)
         for name, rate in daily_rates.items()
     }
     tally = dict.fromkeys(daily_rates, 0)
+    failed_jobs = 0
 
     for _ in range(config.simulation_days):
         for _ in range(config.jobs_per_day):
             max_amount = max(depot.values())
-            if max_amount <= 0:
+            if max_amount < config.box_capacity:
+                failed_jobs += 1
                 continue
             tied = [name for name, amount in depot.items() if amount == max_amount]
             selected = rng.choice(tied)
@@ -99,4 +120,4 @@ def simulate_delivery_selections(
         for name in depot:
             depot[name] = min(depot[name] + daily_rates[name], config.depot_capacity)
 
-    return tally
+    return DeliverySimResult(tally=tally, failed_jobs=failed_jobs)

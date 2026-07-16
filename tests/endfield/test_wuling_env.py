@@ -85,8 +85,12 @@ def test_replicates_1p2e_full():
     # + packed_origocrust_make
     assert rates[40] == 5.0  # sandleaf_plant
     assert 3.0 - 1e-9 <= rates[41] <= 5.0 + 1e-9  # sandleaf_powder
-    assert np.allclose(rates[42:], [0] * (len(rates) - 42))  # thermal_bank + sc/lc
-    # _power + the Steel/SC/HC Valley Battery chain
+    assert np.allclose(rates[42:52], [0] * 10)  # thermal_bank + sc/lc_power + the
+    # Steel/SC/HC Valley Battery chain
+    # Forge-of-the-Sky/Metatransfer bookkeeping formulas (see build_formulas's
+    # module docstring): z=10 to Xiranite supply, 2 to Heavy Xiranite
+    # capacity, Metatransfer option 0 (25 Dense Originium Powder) selected.
+    assert np.allclose(rates[52:56], [10, 2, 1, 0])
     slack = result.result.resource_slack
     assert np.allclose(slack[:9], [0] * 9)
     assert slack[9] >= -1e-9  # sandleaf surplus, if any
@@ -171,7 +175,10 @@ def test_secondary_goals_off_drops_the_goal_formulas_and_their_upstream_make_ste
     assert "packed_origocrust_make" not in f  # only xiranite_component needs it
     assert "sandleaf_plant" not in f  # only sandleaf_powder needs it
     assert "dense_ferrium_powder_make" not in f  # only the Steel/HC Valley chain
-    assert len(f) == 34  # 32 core + purify + purify_node
+    # 32 core + purify + purify_node + 4 forge/metatransfer bookkeeping
+    # formulas (xiranite_forge_alloc, heavy_xiranite_forge_alloc,
+    # metatransfer_option_0/1 -- see build_formulas's module docstring)
+    assert len(f) == 38
 
 
 def test_secondary_goals_on_by_default():
@@ -179,8 +186,9 @@ def test_secondary_goals_on_by_default():
     assert set(SECONDARY_GOAL_FORMULA_NAMES) <= f.keys()
     # 34 core+conditional + 10 goal formulas (SECONDARY_GOAL_FORMULA_NAMES,
     # now including sc_power/lc_power) + 8 plumbing
-    # (SECONDARY_PLUMBING_FORMULA_NAMES)
-    assert len(f) == 52
+    # (SECONDARY_PLUMBING_FORMULA_NAMES) + 4 forge/metatransfer bookkeeping
+    # formulas (see build_formulas's module docstring)
+    assert len(f) == 56
 
 
 def test_secondary_goals_never_change_1p2e_full_dollar_output():

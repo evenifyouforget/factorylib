@@ -12,7 +12,13 @@ from factorylib.alternatives import find_alternatives
 from factorylib.delivery import DeliverySimConfig, simulate_delivery_selections
 from factorylib.endfield.delivery import accumulation_rates
 from factorylib.endfield.diagram import generate_diagram
-from factorylib.endfield.goals import WulingGoals, item_rates
+from factorylib.endfield.goals import item_rates
+from factorylib.endfield.pp_goals import (
+    PPGoals,
+    build_pp_formulas,
+    is_pp_bookkeeping_formula,
+    pp_supply,
+)
 from factorylib.endfield.refine import refine
 from factorylib.endfield.wuling import (
     FORMULA_LABELS,
@@ -24,15 +30,22 @@ from factorylib.endfield.wuling import (
     SECONDARY_GOAL_FORMULA_NAMES,
     SECONDARY_PLUMBING_FORMULA_NAMES,
     SELL_PRIORITY,
-    XI_PER_FORGE,
     WulingConfig,
     build_formulas,
+    full_supply,
     search,
 )
 from factorylib.fractions import snap_value
 from factorylib.optimize import OptimizeResult
 from factorylib.priority_sell import allocate_by_priority
 from factorylib.search import SearchConfig
+
+# Gear Components have no real "100%" target in the pp system (a Nonzero
+# Production Goal -- see pp_goals.nonzero_production_tiers): this is
+# purely an informational reference for display, not tied to any pp
+# mechanism, matching the spec's own framing ("even 0.5/min of Cuprium
+# Component is already ample").
+_GEAR_MIN_TARGET_REFERENCE = 0.5
 
 
 def _parse_float_list(s: str) -> np.ndarray:
@@ -130,14 +143,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="max number of tied solutions to print (including the optimum)",
     )
     parser.add_argument(
-        "-t",
-        "--tie-tol",
-        type=float,
-        default=1e-6,
-        help="$ tolerance for reporting a different discrete (z, metatransfer) "
-        "branch as tied with the optimum",
-    )
-    parser.add_argument(
         "-c",
         "--stock-bill-cap",
         type=float,
@@ -157,17 +162,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "-w",
         "--complexity-weight",
         type=float,
-        default=1.0,
+        default=0.1,
         help="weight of the simplicity/denominator penalty in the refine search "
-        "(default: 1.0; lower values trade simpler fractions for more $/min -- "
-        "e.g. on 1.2e full, 0.01 recovers ~99%% of LP-optimal $ vs ~91%% at 1.0, "
-        "at the cost of much larger denominators)",
+        "(default: 0.1; lower values trade simpler fractions for more $/min and "
+        "more reliably satisfying power/delivery/gear goals; higher values "
+        "prioritize simple fractions over those goals)",
     )
     parser.add_argument(
         "-i",
         "--refine-iterations",
         type=int,
-        default=2000,
+        default=6000,
         help="number of simulated-annealing moves to try when searching for "
         "a more-fit alternative to the optimal solution",
     )
@@ -252,12 +257,18 @@ def _fmt(x: float) -> str:
     return str(snap_value(x, warn=False))
 
 
+def _fmt_pair(x: float) -> str:
+    """ "[exact fraction = decimal]" -- one consistent notation for every
+    place a rate/dollar amount is shown both ways, instead of each call
+    site inventing its own "X (Y)" layout."""
+    return f"[{_fmt(x)} = {x:.4f}]"
+
+
 def _pct(rate: float, target: float, target_label: str) -> str:
-    """ "X% of <target_label> goal", or a no-requirement note if target<=0
-    (matching factorylib.endfield.goals._threshold_term's own
-    "target<=0 means no requirement" convention). target_label is
-    pre-formatted by the caller (e.g. "7000 W", "15/min") so the unit's
-    spacing/placement is exactly right either way."""
+    """ "X% of <target_label> goal", or a no-requirement note if target<=0.
+    target_label is pre-formatted by the caller (e.g. "7000 W",
+    "15/min") so the unit's spacing/placement is exactly right either
+    way."""
     if target <= 0:
         return "no goal set"
     return f"{100 * rate / target:.1f}% of {target_label} goal"
@@ -374,11 +385,12 @@ def _format_result(
     *,
     formulas: dict | None = None,
     stock_bill_cap: float | None = None,
+    fitness_value: float | None = None,
 ) -> str:
-    lines = [
-        f"{label}: dollar={_fmt(result.dollar_output)} $/min "
-        f"({result.dollar_output:.4f} $/min)"
-    ]
+    header = f"{label}: dollar={_fmt_pair(result.dollar_output)} $/min"
+    if fitness_value is not None:
+        header += f", fitness={fitness_value:.4f}"
+    lines = [header]
     if formulas is not None and stock_bill_cap is not None:
         breakdown = _format_income_breakdown(
             result, formula_names, formulas, stock_bill_cap
@@ -386,18 +398,19 @@ def _format_result(
         if breakdown:
             lines.append(breakdown)
     for name, rate in zip(formula_names, result.formula_rates):
-        if abs(rate) > 1e-9:
+        if abs(rate) > 1e-9 and not is_pp_bookkeeping_formula(name):
             full_name = FORMULA_LABELS.get(name, name)
-            note = (
-                " (net -- nothing else in this model consumes it)"
-                if name in SECONDARY_GOAL_FORMULA_NAMES and name != "sandleaf_powder"
-                else ""
-            )
             item_yield = GOOD_YIELD.get(name)
-            item_rate = f" = {_fmt(rate * item_yield)}/min" if item_yield else ""
-            lines.append(
-                f"    {full_name}: {_fmt(rate)} multiples ({rate:.4f}){item_rate}{note}"
-            )
+            power_yield = POWER_YIELD.get(name)
+            if item_yield:
+                extra = f" = {_fmt_pair(rate * item_yield)}/min"
+            elif power_yield:
+                extra = f" = {_fmt_pair(rate * power_yield)} W"
+            elif name in SECONDARY_GOAL_FORMULA_NAMES and name != "sandleaf_powder":
+                extra = " (net -- nothing else in this model consumes it)"
+            else:
+                extra = ""
+            lines.append(f"    {full_name}: {_fmt_pair(rate)} multiples{extra}")
     slack_parts = [
         f"{RESOURCE_LABELS.get(name, name)}={_fmt(s)}"
         for name, s in zip(RESOURCE_NAMES, result.resource_slack)
@@ -479,11 +492,16 @@ def _build_config(args: argparse.Namespace) -> WulingConfig:
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     config = _build_config(args)
+    pp_goals = PPGoals(
+        dollar_target=args.stock_bill_cap,
+        power_target=args.power_target,
+        complexity_weight=args.complexity_weight,
+        delivery_box_capacity=args.delivery_box_capacity,
+        delivery_jobs_per_day=float(args.delivery_jobs_per_day),
+    )
 
     best = search(config)
     formulas = build_formulas(config)
-    if not config.fix_hx_limit:
-        formulas["hx_make"].limit = config.max_forges - best.z
     print(
         _format_result(
             "Optimal solution",
@@ -496,7 +514,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"    z={best.z}, metatransfer: {_format_metatransfer(best.metatransfer)}")
     print(_format_forge_allocation(best.z, config.max_forges))
 
-    supply = config.base_supply + best.z * XI_PER_FORGE + best.metatransfer
+    supply = full_supply(config)
     print(
         _format_material_balance(
             supply, dict(zip(best.formula_names, best.result.formula_rates)), formulas
@@ -524,17 +542,19 @@ def main(argv: list[str] | None = None) -> int:
         name for name in best.formula_names if name not in _tie_detection_exclude
     ]
     primary_formulas = [formulas[name] for name in primary_names]
-    # Only perturb $-bearing formulas' outputs: this is what Part 2's own
-    # "adjusting weights" framing implies (a zero-$ formula has no weight
-    # to begin with), and it's strictly fewer LP solves. Not required for
-    # correctness -- find_alternatives' own dollar-closeness check
-    # catches a bad alternative regardless of which direction produced
-    # it -- but restricting directions here means fewer wasted solves
-    # get discarded by that check in the first place.
+    # Perturb $-bearing formulas' outputs (Part 2's own "adjusting
+    # weights" framing implies a zero-$ formula has no weight to begin
+    # with) plus the forge/metatransfer choice formulas (integer=True,
+    # zero $ output but still a genuine discrete choice worth finding
+    # ties between -- see wuling.py::search's docstring). Restricting to
+    # these isn't required for correctness -- find_alternatives' own
+    # dollar-closeness check catches a bad alternative regardless of
+    # which direction produced it -- but it means fewer wasted solves get
+    # discarded by that check in the first place.
     directions = [
         vec
         for vec, name in zip(np.eye(len(primary_formulas)), primary_names)
-        if formulas[name].output > 0
+        if formulas[name].output > 0 or formulas[name].integer
     ]
     alt_result = find_alternatives(
         supply,
@@ -544,33 +564,11 @@ def main(argv: list[str] | None = None) -> int:
         directions=directions,
     )
     if alt_result.alternatives:
-        print("\nTied alternatives (same z/metatransfer, different LP vertex):")
+        print("\nTied alternatives (same $, different plan -- may include a")
+        print("different forge allocation or Metatransfer choice):")
         for i, alt in enumerate(alt_result.alternatives, 1):
             print(_format_result(f"  Alternative {i}", alt, primary_names))
 
-    discrete_ties = [
-        (result, z, mt)
-        for result, z, mt in best.all_candidates
-        if result.status == "optimal"
-        and (z != best.z or not np.allclose(mt, best.metatransfer))
-        and abs(result.dollar_output - best.result.dollar_output) <= args.tie_tol
-    ]
-    if discrete_ties:
-        print("\nTied discrete branches (different z/metatransfer):")
-        for result, z, mt in discrete_ties[: max(args.max_solutions - 1, 0)]:
-            print(
-                _format_result(
-                    f"  z={z}, metatransfer: {_format_metatransfer(mt)}",
-                    result,
-                    best.formula_names,
-                )
-            )
-
-    goals = WulingGoals(
-        stock_bill_cap=args.stock_bill_cap,
-        power_target=args.power_target,
-        complexity_weight=args.complexity_weight,
-    )
     refine_seed = random.randint(0, 2**31 - 1) if args.random_seed else args.refine_seed
     if args.random_seed:
         print(
@@ -578,19 +576,24 @@ def main(argv: list[str] | None = None) -> int:
             f"pass -s {refine_seed} to reproduce)"
         )
     search_config = SearchConfig(iterations=args.refine_iterations, seed=refine_seed)
-    refined = refine(best, config, goals, search_config, backend=args.refine_backend)
-    consumption = np.stack([f.consumption for f in formulas.values()], axis=1)
-    refined_slack = np.maximum(0.0, supply - consumption @ refined.rates)
+    refined = refine(best, config, pp_goals, search_config, backend=args.refine_backend)
+    # The refined search runs over the FULL pp-scored formula set (real
+    # recipes + pp-tier/bonus/delivery-quota bookkeeping -- see
+    # pp_goals.build_pp_formulas), a superset of `formulas`/`supply`
+    # above, so material balance/slack need their own extended versions.
+    pp_formulas = build_pp_formulas(config, pp_goals)
+    pp_supply_arr = pp_supply(config)
+    pp_consumption = np.stack(
+        [pp_formulas[name].consumption for name in refined.formula_names], axis=1
+    )
+    refined_slack = np.maximum(0.0, pp_supply_arr - pp_consumption @ refined.rates)
     refined_result = OptimizeResult(
         status="optimal",
         dollar_output=refined.dollar_output,
         formula_rates=refined.rates,
         resource_slack=refined_slack,
     )
-    print(
-        f"\nMost fit solution found (fitness={refined.fitness:.4f}, "
-        f"backend={args.refine_backend}):"
-    )
+    print(f"\nMost fit solution found (backend={args.refine_backend}):")
     print(
         _format_result(
             "  Refined solution",
@@ -598,11 +601,13 @@ def main(argv: list[str] | None = None) -> int:
             refined.formula_names,
             formulas=formulas,
             stock_bill_cap=args.stock_bill_cap,
+            fitness_value=refined.fitness,
         )
     )
+    print(f"  Prosperity Points: {_fmt_pair(refined.pp_output)}")
     print(
         _format_material_balance(
-            supply, dict(zip(refined.formula_names, refined.rates)), formulas
+            pp_supply_arr, dict(zip(refined.formula_names, refined.rates)), pp_formulas
         )
     )
     if refined.headroom_lost:
@@ -620,23 +625,59 @@ def main(argv: list[str] | None = None) -> int:
         POWER_YIELD.get(name, 0.0) * rate for name, rate in rates_by_name.items()
     )
     good_rates = item_rates(rates_by_name)
-    power_target_label = f"{_fmt(goals.power_target)} W"
-    power_pct = _pct(power_rate, goals.power_target, power_target_label)
-    print(f"  Power: {_fmt(power_rate)} W ({power_pct})")
-    for good_name, target in goals.delivery_goods.items():
+    power_target_label = f"{_fmt(pp_goals.power_target)} W"
+    power_pct = _pct(power_rate, pp_goals.power_target, power_target_label)
+    print(f"  Power: {_fmt_pair(power_rate)} W ({power_pct})")
+
+    # Delivery Job Quota achieved: sum of every delivery_quota_from_*
+    # formula's rate (see pp_goals module docstring) -- how many boxes'
+    # worth of distinct materials this plan can supply per day, against
+    # the pp_goals.delivery_jobs_per_day target.
+    quota_contributions = {
+        name: rate
+        for name, rate in rates_by_name.items()
+        if name.startswith("delivery_quota_from_") and rate > 1e-9
+    }
+    quota_achieved = sum(quota_contributions.values())
+    quota_target_label = f"{_fmt(pp_goals.delivery_jobs_per_day)} jobs/day"
+    quota_pct = _pct(quota_achieved, pp_goals.delivery_jobs_per_day, quota_target_label)
+    print(f"  Delivery quota: {_fmt_pair(quota_achieved)} ({quota_pct})")
+    for name, rate in sorted(
+        quota_contributions.items(), key=lambda kv: kv[1], reverse=True
+    ):
+        resource_name = name.removeprefix("delivery_quota_from_")
+        label = RESOURCE_LABELS.get(resource_name, resource_name)
+        print(f"      {label}: {_fmt_pair(rate)} quota")
+
+    for warning in (
+        _goal_shortfall_warnings(
+            refined.dollar_output, pp_goals.dollar_target, "$/min", "stock-bill"
+        )
+        + _goal_shortfall_warnings(power_rate, pp_goals.power_target, "W", "power")
+        + _goal_shortfall_warnings(
+            quota_achieved, pp_goals.delivery_jobs_per_day, "jobs/day", "delivery quota"
+        )
+    ):
+        print(warning)
+
+    # Gear Components have no real "100%" target in the pp system (a
+    # Nonzero Production Goal -- see pp_goals.nonzero_production_tiers):
+    # _GEAR_MIN_TARGET_REFERENCE is purely informational, not tied to any
+    # pp mechanism, just the spec's own framing ("even 0.5/min of
+    # Cuprium Component is already ample") for gauging "is this enough".
+    for good_name in (
+        "hetonite_component",
+        "xiranite_component",
+        "cuprium_component",
+        "ferrium_component",
+    ):
         label = FORMULA_LABELS.get(good_name, good_name)
         rate = good_rates.get(good_name, 0.0)
-        target_label = f"{_fmt(target)}/min"
-        print(f"  {label}: {_fmt(rate)}/min ({_pct(rate, target, target_label)})")
-
-    for warning in _goal_shortfall_warnings(
-        refined.dollar_output, goals.stock_bill_cap, "$/min", "stock-bill"
-    ) + _goal_shortfall_warnings(power_rate, goals.power_target, "W", "power"):
-        print(warning)
-    for good_name, target in goals.delivery_goods.items():
-        label = FORMULA_LABELS.get(good_name, good_name)
+        target_label = f"{_fmt(_GEAR_MIN_TARGET_REFERENCE)}/min"
+        pct = _pct(rate, _GEAR_MIN_TARGET_REFERENCE, target_label)
+        print(f"  {label}: {_fmt_pair(rate)}/min ({pct})")
         for warning in _goal_shortfall_warnings(
-            good_rates.get(good_name, 0.0), target, "/min", f"{label} delivery"
+            rate, _GEAR_MIN_TARGET_REFERENCE, "/min", f"{label} gear"
         ):
             print(warning)
 
@@ -669,7 +710,8 @@ def main(argv: list[str] | None = None) -> int:
         accumulating[label] = (
             accumulating.get(label, 0.0) + unsold_dollar * good_yield / output
         )
-    tally = simulate_delivery_selections(accumulating, delivery_config)
+    delivery_result = simulate_delivery_selections(accumulating, delivery_config)
+    tally = delivery_result.tally
     print(
         f"\nDelivery job prediction ({delivery_config.simulation_days} days, "
         f"{delivery_config.jobs_per_day} jobs/day, "
@@ -681,7 +723,7 @@ def main(argv: list[str] | None = None) -> int:
         "(ties broken randomly)."
     )
     if tally:
-        total_jobs = sum(tally.values())
+        total_jobs = sum(tally.values()) + delivery_result.failed_jobs
         for name, count in sorted(tally.items(), key=lambda kv: kv[1], reverse=True):
             if count > 0:
                 pct = 100 * count / total_jobs if total_jobs > 0 else 0.0
@@ -691,6 +733,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"    (never selected: {', '.join(never_selected)})")
     else:
         print("    (nothing accumulates unconsumed in the depot)")
+    if delivery_result.failed_jobs > 0:
+        total_jobs = sum(tally.values()) + delivery_result.failed_jobs
+        pct = 100 * delivery_result.failed_jobs / total_jobs
+        print(
+            f"  Warning: failed to pack goods due to insufficient materials on "
+            f"{delivery_result.failed_jobs} of {total_jobs} simulated jobs "
+            f"({pct:.1f}%) -- no material had accumulated the "
+            f"{_fmt(delivery_config.box_capacity)} needed to fill a box"
+        )
 
     if args.diagram:
         written = generate_diagram(

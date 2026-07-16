@@ -219,6 +219,18 @@ RESOURCE_NAMES = [
     "hc_valley_battery",
     "sc_battery",
     "lc_battery",
+    # Virtual bookkeeping resources (no physical belt/pipe flow -- see
+    # build_formulas's module docstring): forge_budget lets
+    # xiranite_forge_alloc/heavy_xiranite_forge_alloc compete for the
+    # same max_forges pool; hx_forge_capacity lets
+    # heavy_xiranite_forge_alloc cap hx_make's rate; metatransfer_
+    # allowance lets the metatransfer-option formulas compete for the
+    # single "pick exactly one" choice. All three turn what used to be an
+    # external brute-force loop over (z, metatransfer) into ordinary
+    # Formula entries solved by the same MILP as everything else.
+    "forge_budget",
+    "hx_forge_capacity",
+    "metatransfer_allowance",
 ]
 FORMULA_NAMES = [
     "cup_conv",
@@ -323,6 +335,26 @@ RESOURCE_BELT_SPEED = {
     "lc_battery": 30.0,
 }
 
+
+def is_forge_or_metatransfer_formula(name: str) -> bool:
+    """True for the forge-allocation/metatransfer-choice bookkeeping
+    formulas (see build_formulas's module docstring) --
+    factorylib.endfield.goals._plan_complexity excludes them from the
+    fraction-complexity penalty entirely: xiranite_forge_alloc/
+    heavy_xiranite_forge_alloc's real Xiranite flow is always an exact
+    integer number of belts by construction (1 forge == 1 belt's worth),
+    so excluding it never changes anything numerically, but a
+    metatransfer_option_* formula's real resource flow (e.g. 25 Dense
+    Originium Powder) generally is *not* a clean belt multiple -- and
+    Metatransfer is a discrete inventory action, not a continuous belt,
+    so pricing it as one would be pricing something that was never
+    priced before this refactor and isn't a real physical throughput
+    concern at all."""
+    return name in ("xiranite_forge_alloc", "heavy_xiranite_forge_alloc") or (
+        name.startswith("metatransfer_option_")
+    )
+
+
 # W produced per multiple of a formula's rate. Formula.output is $-only, so
 # a formula that only contributes power (no $ value) is tracked here
 # instead -- see plan_from_search_result in factorylib.endfield.goals.
@@ -415,6 +447,9 @@ RESOURCE_LABELS = {
     "hc_valley_battery": "HC Valley Battery",
     "sc_battery": "SC Wuling Battery",
     "lc_battery": "LC Wuling Battery",
+    "forge_budget": "Forge of the Sky Budget",
+    "hx_forge_capacity": "Heavy Xiranite Forge Capacity",
+    "metatransfer_allowance": "Metatransfer Allowance",
 }
 
 FORMULA_LABELS = {
@@ -495,6 +530,8 @@ FORMULA_LABELS = {
     ),
     "thermal_bank_sc_valley": "Thermal Bank (SC Valley Battery → Power)",
     "thermal_bank_hc_valley": "Thermal Bank (HC Valley Battery → Power)",
+    "xiranite_forge_alloc": "Forge of the Sky (→ Xiranite supply)",
+    "heavy_xiranite_forge_alloc": "Forge of the Sky (→ Heavy Xiranite capacity)",
 }
 
 # Metatransfer choices are literal items selected in the game's
@@ -583,7 +620,10 @@ class WulingConfig:
 
 
 def make_formula(
-    consumption: dict[str, float], output: float, limit: float = np.inf
+    consumption: dict[str, float],
+    output: float,
+    limit: float = np.inf,
+    integer: bool = False,
 ) -> Formula:
     """Build a Formula from a name-keyed consumption dict instead of a
     positional array -- raises immediately on an unknown resource name
@@ -595,7 +635,7 @@ def make_formula(
         if name not in RESOURCE_NAMES:
             raise ValueError(f"Unknown resource name: {name!r}")
         vec[RESOURCE_NAMES.index(name)] = amount
-    return Formula(consumption=vec, output=output, limit=limit)
+    return Formula(consumption=vec, output=output, limit=limit, integer=integer)
 
 
 def build_formulas(config: WulingConfig) -> dict[str, Formula]:
@@ -614,6 +654,14 @@ def build_formulas(config: WulingConfig) -> dict[str, Formula]:
     # disabling secondary_goals still never changes $-optimal search()
     # results (see test_secondary_goals_never_change_1p2e_full_dollar_output).
     _ori_to_dop_sandleaf = 30.0 if config.secondary_goals else 0.0
+    # hx_make's rate is capped by however many Forge of the Sky units get
+    # allocated to Heavy Xiranite capacity (see heavy_xiranite_forge_alloc
+    # below) via a shared "hx_forge_capacity" resource, instead of an
+    # external `.limit = max_forges - z` override recomputed by every
+    # caller. fix_hx_limit=True keeps the old behavior (a static limit,
+    # not tied to any forge allocation at all -- see WulingConfig's
+    # docstring) by simply not metering this consumption.
+    _hx_make_capacity = {} if config.fix_hx_limit else {"hx_forge_capacity": 1.0}
     f = {
         # 30 cup_ore -> 30 cup + 30 sew
         "cup_conv": make_formula({"cup_ore": 30, "cup": -30, "sew": -30}, 0),
@@ -693,8 +741,12 @@ def build_formulas(config: WulingConfig) -> dict[str, Formula]:
         # Sell 6 Hetonite Part at $48/unit ($288/multiple).
         "hp_sell": make_formula({"hetonite_part": 6}, 48 * 6),
         # Forge of the Sky: 60 Xiranite + 30 Xircon Effluent -> 6 Heavy
-        # Xiranite. Core: hx_sell needs it.
-        "hx_make": make_formula({"xi": 60, "eff": 30, "heavy_xiranite": -6}, 0),
+        # Xiranite. Core: hx_sell needs it. Rate capped via
+        # hx_forge_capacity (see _hx_make_capacity above), not a static
+        # limit -- its own limit is left unbounded.
+        "hx_make": make_formula(
+            {"xi": 60, "eff": 30, "heavy_xiranite": -6, **_hx_make_capacity}, 0
+        ),
         # Sell 6 Heavy Xiranite at $27/unit ($162/multiple).
         "hx_sell": make_formula({"heavy_xiranite": 6}, 27 * 6),
         # Fitting Unit: 30 Ferrium -> 30 Ferrium Part. Distinct from
@@ -831,6 +883,37 @@ def build_formulas(config: WulingConfig) -> dict[str, Formula]:
         # Thermal Bank: 1.5 HC Valley Battery -> 1100 W.
         f["thermal_bank_hc_valley"] = make_formula({"hc_valley_battery": 1.5}, 0)
 
+    # Forge of the Sky allocation, as ordinary (integer) Formula entries
+    # instead of an external brute-force loop over z -- both compete for
+    # the same max_forges "forge_budget" pool (see full_supply()).
+    f["xiranite_forge_alloc"] = make_formula(
+        {"forge_budget": 1.0, "xi": -30.0},
+        0,
+        limit=float(config.max_forges),
+        integer=True,
+    )
+    if not config.fix_hx_limit:
+        # -> 1 hx_forge_capacity, which hx_make now consumes 1-per-
+        # multiple (see _hx_make_capacity above).
+        f["heavy_xiranite_forge_alloc"] = make_formula(
+            {"forge_budget": 1.0, "hx_forge_capacity": -1.0},
+            0,
+            limit=float(config.max_forges),
+            integer=True,
+        )
+
+    # Metatransfer choice, as one competing integer Formula per option --
+    # each produces that option's resource vector directly, and all of
+    # them draw on the same "pick exactly one" metatransfer_allowance
+    # pool (see full_supply()).
+    for i, mt in enumerate(config.metatransfers):
+        vec = np.zeros(len(RESOURCE_NAMES), dtype=float)
+        vec[RESOURCE_NAMES.index("metatransfer_allowance")] = 1.0
+        vec -= np.asarray(mt, dtype=float)
+        f[f"metatransfer_option_{i}"] = Formula(
+            consumption=vec, output=0.0, limit=1.0, integer=True
+        )
+
     for name, limit in config.formula_limits.items():
         if name in f:
             f[name].limit = limit
@@ -843,41 +926,74 @@ def build_formulas(config: WulingConfig) -> dict[str, Formula]:
 
 @dataclass
 class SearchResult:
-    """Result of search(). `all_candidates` is kept so callers can find
-    near-optimal discrete (z, metatransfer) branches, e.g. to detect
-    discrete-search ties that find_alternatives (an LP-objective-only tool)
-    cannot see on its own."""
+    """Result of search(). z/metatransfer are derived from the solved
+    rates of the xiranite_forge_alloc/heavy_xiranite_forge_alloc/
+    metatransfer_option_* formulas (see build_formulas), kept as their
+    own fields since callers display them specially (_format_forge_
+    allocation, _format_metatransfer) rather than as generic formula
+    rates."""
 
     result: OptimizeResult
     z: int
     metatransfer: np.ndarray
     formula_names: list[str]
-    all_candidates: list[tuple[OptimizeResult, int, np.ndarray]]
+
+
+def full_supply(config: WulingConfig) -> np.ndarray:
+    """The complete resource-supply vector search() (and any other
+    direct maximize_dollar caller working with build_formulas' output)
+    should use: config.base_supply plus the fixed amounts the forge/
+    metatransfer choice formulas compete over (see build_formulas's
+    module docstring) -- max_forges of forge_budget, and (if any
+    metatransfer options exist) exactly 1 metatransfer_allowance."""
+    supply = config.base_supply.copy()
+    supply[RESOURCE_NAMES.index("forge_budget")] += config.max_forges
+    if config.metatransfers:
+        supply[RESOURCE_NAMES.index("metatransfer_allowance")] += 1.0
+    return supply
 
 
 def search(config: WulingConfig) -> SearchResult:
-    """Search over forge allocations (z) and metatransfer choices, returning
-    the best-dollar solution.
-
-    Generalizes tests/wuling/test_wuling_1p2e.py::_search_1p2e.
+    """Find the $-optimal production plan, including which discrete
+    Forge of the Sky allocation (Xiranite supply vs. Heavy Xiranite
+    capacity) and Metatransfer option to pick -- all solved together in
+    one MILP (see factorylib.optimize.maximize_dollar's docstring on the
+    integer-formula path), rather than the previous brute-force loop
+    over every (z, metatransfer) combination. A nice side effect:
+    factorylib.alternatives.find_alternatives' epsilon-perturbation tie
+    finder now surfaces ties *between* discrete choices for free, the
+    same way it already finds ties between continuous formulas -- see
+    cli.py's "Tied alternatives" section, which no longer needs a
+    separate "Tied discrete branches" pass. Completeness isn't
+    guaranteed either way -- the spec never required finding *every*
+    tied solution (there can be infinitely many in the continuous case,
+    e.g. sliding between more Hetonite Part vs. more Yazhen A+C), and a
+    perturbation direction finding one specific discrete alternative
+    (vs. a different one) is inherently a bit search-order-dependent.
+    What matters is surfacing genuinely different solutions a player
+    would care about, which this does; whether any *particular* tied
+    integer assignment shows up in a short truncated list is not
+    something this tries to guarantee.
     """
     formulas = build_formulas(config)
-    candidates: list[tuple[OptimizeResult, int, np.ndarray]] = []
-    for z in range(config.max_forges + 1):
-        if not config.fix_hx_limit:
-            formulas["hx_make"].limit = config.max_forges - z
-        for mt in config.metatransfers:
-            income = config.base_supply + z * XI_PER_FORGE + mt
-            result = maximize_dollar(income, list(formulas.values()))
-            candidates.append((result, z, mt.copy()))
+    names = list(formulas.keys())
+    idx = {name: i for i, name in enumerate(names)}
+    supply = full_supply(config)
+    result = maximize_dollar(supply, list(formulas.values()))
 
-    best_result, best_z, best_mt = max(candidates, key=lambda c: c[0].dollar_output)
+    z = int(round(result.formula_rates[idx["xiranite_forge_alloc"]]))
+    metatransfer = np.zeros(len(RESOURCE_NAMES))
+    for i, mt in enumerate(config.metatransfers):
+        opt_name = f"metatransfer_option_{i}"
+        metatransfer += result.formula_rates[idx[opt_name]] * np.asarray(
+            mt, dtype=float
+        )
+
     return SearchResult(
-        result=best_result,
-        z=best_z,
-        metatransfer=best_mt,
-        formula_names=list(formulas.keys()),
-        all_candidates=candidates,
+        result=result,
+        z=z,
+        metatransfer=metatransfer,
+        formula_names=names,
     )
 
 
