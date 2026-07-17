@@ -176,6 +176,39 @@ limiter turns out to make a genuinely wide set of denominators cheap
 instead of the current flat "in _NICE_DENOMINATORS or not" model --
 but only once real 1.4 numbers confirm this is worth the complexity.
 
+### Forge of the Sky: real recipes now confirmed (was previously an abstraction)
+Real recipes, replacing 1.2e's abstracted `forge_budget`-allocated
+`xiranite_forge_alloc`/`heavy_xiranite_forge_alloc`:
+```
+Forge of the Sky: 2 Stabilized Carbon + 1 Water -> 1 Xiranite (every 2s)
+Forge of the Sky: 10 Xiranite + 5 Xircon Effluent -> 1 Heavy Xiranite (every 10s)
+```
+Heavy Xiranite is now downstream of Xiranite (a real consumption, not a
+separate capacity allocation) rather than the old two-parallel-outputs
+framing. **Confirmed with the user**: global cap is 12 Forge of the Sky
+buildings total (same number as 1.2e's `max_forges=12` default -- good
+continuity), each committed to EITHER the Xiranite recipe OR the Heavy
+Xiranite recipe, not both -- so the *shared-integer-pool, competing
+consumers* mechanic from 1.2e (`forge_budget`) is still the right
+shape, just feeding real recipe formulas instead of an abstraction
+(and possibly literally still `max_forges=12` as the default, unless
+1.4 changes it). Concretely: keep a
+`forge_budget`-like virtual resource, with two `integer=True` Formula
+entries (`xi_forge_alloc`, `hx_forge_alloc`) each consuming 1 unit of
+it and producing the *capacity* to run the corresponding real recipe
+(mirroring `wuling.py`'s existing `xiranite_forge_alloc`/
+`heavy_xiranite_forge_alloc` pattern almost exactly -- this is closer
+to a rename/rewire than a new mechanic).
+
+### Dollar target: single combined pool (confirmed)
+**Confirmed with the user**: model the new Cloudseeder Station outpost
+and the existing Cardiac Remediation Station as ONE combined
+`dollar_target`, not two independent ones -- simpler, and avoids
+needing to model which specific goods count against which outpost's
+cap. Revisit only if this turns out to misprice something once real
+sellable-goods overlap/conflicts are checked against both outposts'
+lists.
+
 ### Alternate gear crafting (Component substitution hierarchy)
 Higher-tier Components can substitute for lower-tier gear recipes
 (Hetonite Component -> Xiranite-tier gears, but not reverse). Pyrrolite
@@ -212,6 +245,18 @@ Pyrrolite Component anyway once given the choice; only add explicit
 discount-modeling if that turns out not to hold once real numbers are
 in. Conversion ratios above (50:1, 2/5/1 for T4->T3->T2->T1) are the
 current best guess, not yet confirmed against real 1.4 data.
+
+**Update: now confirmed, not just a guess.** kaneko_1p4_data_sheet.md's
+"Crafting" section gives the real per-tier $+Component costs (T1: 8k$+
+50XC / 8k$+50CC / 8k$+10HC / 80$+5PC; T2: 16k$+50CC / 16k$+10HC / 160$+
+5PC; T3: 25k$+50HC / 250$+25PC; T4: 360$+50PC). Working through the
+proposed 50:1-own-tier + 2/5/1-cascade ratios by hand reproduces every
+single one of these numbers exactly (e.g. 5 PC -> 0.1 T4 CP -> 0.2 T3
+CP -> 1.0 T2 CP -> 1.0 T1 CP, matching "5 PC covers T1 or T2" exactly;
+10 HC -> 0.2 T3 CP -> 1.0 T2 CP -> 1.0 T1 CP, matching "10 HC covers T1
+or T2" too). The Crafting Point design isn't just architecturally
+nicer than O(N^2) substitution formulas -- it's mathematically
+equivalent to the real costs. Safe to implement as designed.
 
 ### "Kaneko's 6/min Science" (speculative, unconfirmed)
 Open questions about how flow-rate limiting is actually implemented
