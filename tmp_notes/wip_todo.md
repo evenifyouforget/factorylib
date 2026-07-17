@@ -10,12 +10,14 @@ between sessions.
 - PR #13 ("Specialize for Endfield: Endfield-specific multi-goal
   solving, integer formulas, CLI") merged to `main` at `fe099a3`.
 - Current branch: `wuling-1p4`, for Endfield 1.4 content.
-- Repo state on this branch: 3125 tests passing, `ruff check`/`ruff
+- Repo state on this branch: 3127 tests passing, `ruff check`/`ruff
   format --check` clean.
 - **`src/factorylib/endfield/wuling_1p4.py` now exists** -- the 1.4
-  recipe/resource graph, now fully unfolded (no folded formulas -- see
-  "1.4 implementation status" below) and verified to reproduce 1.2e's
-  historical $-optimal figures exactly. Not yet wired into
+  recipe/resource graph, fully unfolded (no folded formulas), both
+  directions of every Fluid-Gas/Solid-Gas Transmuting Unit recipe
+  modeled (closing Pyrrolite's last remaining gap), and verified to
+  reproduce 1.2e's historical $-optimal figures exactly once the
+  purely-additive gas economy is isolated out. Not yet wired into
   pp_goals/refine/cli -- see "1.4 remaining work" below.
 - Default CLI run (`python -m factorylib.endfield`, still 1.2e-only):
   - Optimal ($-only): $1415.99/min (129.9% of $1090 stock-bill goal)
@@ -427,9 +429,6 @@ the work is in the new recipes"):
   Xiranite/Cuprium Component/Hetonite Part/Pyrrolite Part/T1-T4 Crafting
   Point at 0.5/min, Liquid Xiranite at 10/min), no CLI entry point, no
   `FORMULA_LABELS` dict (only `RESOURCE_LABELS` exists so far).
-- 6 "reverse" Fluid-Gas/Solid-Gas Transmuting Unit recipes not modeled
-  (rates never given) -- also the only visible path to a Pyrrolite
-  source, still unresolved.
 - Threshold-activation inputs folded in as plain proportional
   consumption everywhere except Forge of the Sky/Gas Dispersing Unit/
   Gas Reactor Globe/Stable-ENV Purification variants (which use the
@@ -439,3 +438,49 @@ the work is in the new recipes"):
   cap for any of them shows up.
 - Filling Unit only modeled for Inergen/Xiragen (the two variants
   anything downstream actually needs).
+
+## Pyrrolite resolved: both directions of Transmuting Unit recipes
+
+The user pointed out the missing piece directly: Gas Reactor Globe
+already makes Pyrrolite Gas (2 Hetonite Gas + 1 Xiragen -> 1 Pyrrolite
+Gas, Acrid ENV), and the *reverse* of Solid-Gas Transmuting Unit's own
+"Xiragen[6/min] + 1 Pyrrolite -> 1 Pyrrolite Gas" turns that back into
+solid Pyrrolite. **Confirmed with the user: both directions of ALL 6
+Fluid-Gas and 5 Solid-Gas Transmuting Unit recipes are modeled** (not
+just the one Pyrrolite needed) -- the same building runs the same
+conversion backwards, same ratio and activation cost, input/output
+swapped. Confirmed detail: the activation good (Liquid Xiranite /
+Xiragen) always stays on the input side, even in reverse -- it's never
+itself produced by a reverse recipe (this matters for the two
+self-referential recipes, fluid_gas_xiragen/solid_gas_xiragen, where
+the activation good is also the recipe's own reactant/product -- see
+module docstring for the exact net-consumption derivation).
+
+**This changed what "reproduces past results" means.** With the wider
+gas network in place, the model can bootstrap real new value even from
+*zero* external Inergen/Xiragen supply (e.g. converting idle Xiranite
+into Xiragen via the self-referential solid_gas_xiragen, then routing
+it through the rest of the network) -- so an exact `==` match against
+1.2e's historical $-optimal figure no longer holds on the full model.
+This is expected, not a regression (adding feasible options to an LP
+can only weakly improve its optimum, never hurt it). Split into two
+kinds of test accordingly:
+- `test_matches_or_exceeds_1p2e_*`: the full model, checking `>=`.
+- `test_reproduces_1p2e_*_exactly_with_gas_economy_disabled`: bans
+  every purely-additive 1.4 formula (computed as a set difference
+  against plain 1.2e's own formula names -- not hand-maintained, so it
+  can't go stale as more formulas get added), keeping only the required
+  replacement infrastructure (Forge of the Sky's new recipes, the
+  Carbon chain feeding them, Yazhen/Jincao's unfolded stages) active.
+  Confirmed empirically (not just reasoned about) that this reproduces
+  both historical figures (206735/146, 205129/146) bit-exactly.
+
+Also had to relax `test_pyrrolite_...`/`test_search_prefers_stable_env_...`
+from "the unconstrained optimum always chooses this path" to "this path
+is genuinely feasible under enough incentive" -- once Pyrrolite/Stable
+ENV compete with several *other* new reverse recipes for the same
+scarce resources (Acrid ENV, Hetonite Gas, Xiragen), which specific
+path the unconstrained $-optimal picks becomes a genuine economic
+choice each time (like which of two tied alternatives 1.2e's own search
+picks), not a fixed guarantee -- feasibility-under-incentive is the
+right invariant to test, not "the default config happens to pick it."

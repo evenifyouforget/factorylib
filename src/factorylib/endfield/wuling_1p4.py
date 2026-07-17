@@ -18,7 +18,8 @@ Ore (420), Inergen (>=260), and Xiragen (30) are the ONLY materials
 with any base income at all, besides the virtual forge_budget
 allowance. Every other new material must be crafted -- see
 WulingConfig1p4's docstring for how Carbon/Stabilized Carbon's real
-supply chain is now modeled, and Pyrrolite's remaining gap.
+supply chain is modeled, and the Fluid-Gas/Solid-Gas Transmuting Unit
+note below for how Pyrrolite's own chain closes.
 
 No folded formulas (confirmed with the user): 1.2e collapses Yazhen and
 Jincao's Planting+Shredding+Reactor Crucible chain into one zero-cost
@@ -30,21 +31,38 @@ stages (yazhen_plant/yazhen_powder_make/yazhen_solution_make and the
 Jincao equivalents), verified to still reproduce 1.2e's historical
 $-optimal figures exactly (see test_wuling_1p4.py).
 
+Both directions of Fluid-Gas/Solid-Gas Transmuting Unit recipes
+(confirmed with the user): kaneko_1p4_data_sheet.md's generic
+"(X units of the gas) -> (Y units of the solid/liquid), every Z
+seconds (reverse of the above N recipes)" line means the same building
+runs the same conversion backwards, at the same ratio and activation
+cost, just with input/output swapped -- not a separately-unconfirmed
+rate. Confirmed detail: the activation good (Liquid Xiranite for
+Fluid-Gas, Xiragen for Solid-Gas) stays on the *input* side even in
+reverse -- it's never itself produced by the reverse recipe. This
+resolved Pyrrolite's earlier "no confirmed recipe produces it"
+gap: Gas Reactor Globe already makes Pyrrolite Gas, and the reverse of
+Solid-Gas Transmuting Unit's own Pyrrolite recipe turns that back into
+solid Pyrrolite. Two of these 12 reverse formulas
+(fluid_gas_aquagen_reverse/fluid_gas_acridgen_reverse) are pure sinks
+(their real product, Water/Acid, isn't a tracked resource) -- modeled
+anyway for fidelity, though no rational plan would ever run them.
+
+Note this also means an exact 1.2e $-optimal reproduction test can no
+longer just zero out Inergen/Xiragen base supply and expect equality
+(see test_wuling_1p4.py): the wider gas network can bootstrap real new
+value even from zero external gas supply (e.g. converting otherwise-
+idle Xiranite into Xiragen via solid_gas_xiragen, itself self-
+referential -- Xiragen is both the activation input and the output).
+This is expected, not a bug -- adding feasible options to an LP can
+only weakly improve its optimum, never hurt it -- so the historical
+reproduction tests check ">=" on the full model, plus a separate
+"==" check with every purely-additive 1.4 formula explicitly banned
+(computed as a set difference against 1.2e's own formula names, not
+hand-maintained) to isolate and confirm the unfolding itself is still
+exactly lossless.
+
 Known gaps / assumptions (flag before treating any of this as final):
-  - Pyrrolite has zero base supply (confirmed: it must be crafted, not
-    sourced directly) and no confirmed recipe produces it either -- see
-    WulingConfig1p4's docstring for the reverse-Transmuting-Unit-recipe
-    gap this leaves. Structurally unreachable, along with everything
-    downstream (Pyrrolite Part/Component, the T4 Crafting Point tier,
-    pyrrolite_part_sell) until that's resolved.
-  - Carbon/Stabilized Carbon: unlike Pyrrolite, this gap IS resolved --
-    see WulingConfig1p4's docstring and the "no folded formulas" note
-    above for the real 4-source supply chain (Buckflower, Sandleaf,
-    Jincao, Yazhen).
-  - The 6 "reverse" Fluid-Gas/Solid-Gas Transmuting Unit recipes ("every
-    Z seconds", rate never given) are NOT modeled -- only the 11 forward
-    recipes with concrete per-cycle numbers are. (This is also the only
-    visible path to a Pyrrolite source, per the gap above.)
   - Filling Unit is only modeled for the 2 gas variants new_goals.md and
     the exploration-items list actually reference (Inergen, Xiragen),
     not all 8 possible gases the recipe is generically described for.
@@ -292,14 +310,12 @@ def make_formula(
 # (besides the virtual forge_budget allowance) -- Carbon, Stabilized
 # Carbon, and Pyrrolite must all be crafted, never sourced directly.
 # Carbon/Stabilized Carbon's real supply chain (tmp_notes/old_prompt.md,
-# the original pre-1.2e problem statement) is now modeled below in
+# the original pre-1.2e problem statement) is modeled below in
 # build_formulas: Buckflower or Sandleaf -> Carbon -> Carbon Powder ->
-# Dense Carbon Powder -> Stabilized Carbon. Pyrrolite still has no
-# confirmed recipe producing it at all (see module docstring) and
-# remains structurally unreachable, along with everything downstream
-# (Pyrrolite Part, Pyrrolite Component, the T4 Crafting Point tier,
-# pyrrolite_part_sell) -- not papered over with a guessed reverse-recipe
-# ratio, since a wrong guess would propagate through its whole chain.
+# Dense Carbon Powder -> Stabilized Carbon. Pyrrolite's own chain closes
+# via Gas Reactor Globe (-> Pyrrolite Gas) + the reverse of Solid-Gas
+# Transmuting Unit's Pyrrolite recipe (-> solid Pyrrolite) -- see module
+# docstring's Fluid-Gas/Solid-Gas Transmuting Unit note.
 DEFAULT_ORIGINIUM_ORE = 540.0
 DEFAULT_FERRIUM_ORE = 120.0
 DEFAULT_CUPRIUM_ORE = 420.0
@@ -618,15 +634,32 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
         {"cuprium_gas": 2.0, "separator_core": 2.0, "hetonite_gas": -1.0}, 0.0
     )
 
-    # Fluid-Gas Transmuting Unit (forward recipes only -- see module
-    # docstring). Liquid Xiranite's [threshold 6/min] activation is
-    # folded in proportionally at the 6-per-30-throughput ratio (1/5
-    # unit per unit of real output), also per the module docstring.
+    # Fluid-Gas Transmuting Unit: both directions modeled for all 6
+    # recipes (confirmed with the user -- kaneko_1p4_data_sheet.md's
+    # generic "(X units of the gas) -> (Y units of the solid), every Z
+    # seconds (reverse of the above 6 recipes)" line means the same
+    # building runs the same conversion backwards, at the same ratio and
+    # activation cost, just with input/output swapped -- not a
+    # separately-unconfirmed rate. Liquid Xiranite's [threshold 6/min]
+    # activation is folded in proportionally at the 6-per-30-throughput
+    # ratio (1/5 unit per unit of real output) either direction, per the
+    # module docstring.
     f["fluid_gas_aquagen"] = make_formula(
         {"liquid_xiranite": 0.2, "aquagen": -1.0}, 0.0
     )
+    # Reverse produces untracked (free) Water -- a pure sink, no LP
+    # would ever choose to run it, but modeled for fidelity anyway.
+    f["fluid_gas_aquagen_reverse"] = make_formula(
+        {"liquid_xiranite": 0.2, "aquagen": 1.0}, 0.0
+    )
+    # Self-referential (Liquid Xiranite is both the activation input and
+    # the reactant) -- net consumption combines produced/consumed into
+    # one entry, same reasoning as solid_gas_xiragen below.
     f["fluid_gas_xiragen"] = make_formula(
         {"liquid_xiranite": 1.2, "xiragen": -1.0}, 0.0
+    )
+    f["fluid_gas_xiragen_reverse"] = make_formula(
+        {"liquid_xiranite": -0.8, "xiragen": 1.0}, 0.0
     )
     f["fluid_gas_cuprium_gas"] = make_formula(
         {
@@ -636,8 +669,15 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
         },
         0.0,
     )
+    f["fluid_gas_cuprium_gas_reverse"] = make_formula(
+        {"liquid_xiranite": 0.2, "cuprium_gas": 1.0, "cuprium_solution": -2.0}, 0.0
+    )
     f["fluid_gas_acridgen"] = make_formula(
         {"liquid_xiranite": 0.2, "acridgen": -1.0}, 0.0
+    )
+    # Reverse produces untracked (free) Acid -- also a pure sink.
+    f["fluid_gas_acridgen_reverse"] = make_formula(
+        {"liquid_xiranite": 0.2, "acridgen": 1.0}, 0.0
     )
     # Batch (per-cycle) ratios used directly here, not normalized to "per
     # 1 output unit" -- this recipe's 5-Heavy-Xiragen batch makes that
@@ -653,6 +693,10 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
         },
         0.0,
     )
+    f["fluid_gas_heavy_xiragen_reverse"] = make_formula(
+        {"liquid_xiranite": 1.0, "heavy_xiragen": 5.0, "liquid_heavy_xiranite": -2.0},
+        0.0,
+    )
     f["fluid_gas_hetonite_gas"] = make_formula(
         {
             "liquid_xiranite": 0.2,
@@ -661,28 +705,49 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
         },
         0.0,
     )
+    f["fluid_gas_hetonite_gas_reverse"] = make_formula(
+        {"liquid_xiranite": 0.2, "hetonite_gas": 1.0, "hetonite_solution": -1.0}, 0.0
+    )
 
-    # Solid-Gas Transmuting Unit (forward recipes only). solid_gas_xiragen
-    # is self-referential -- Xiragen is BOTH the activation input and the
+    # Solid-Gas Transmuting Unit: both directions for all 5 recipes,
+    # same rationale as Fluid-Gas above. solid_gas_xiragen is
+    # self-referential -- Xiragen is BOTH the activation input and the
     # recipe's own output -- so the net consumption entry combines
     # produced (-1.0) and activation-consumed (+0.2) into -0.8; forgetting
     # the production term entirely was a real bug caught while writing
     # this (see module docstring).
     f["solid_gas_xiragen"] = make_formula({"xi": 1.0, "xiragen": -0.8}, 0.0)
+    f["solid_gas_xiragen_reverse"] = make_formula({"xiragen": 1.2, "xi": -1.0}, 0.0)
     # Batch (per-cycle) ratios, same reasoning as fluid_gas_heavy_xiragen
     # above: 1 cycle (every 10s) = 1 Xiragen (6/min activation over 6
     # cycles/min) + 2 Heavy Xiranite -> 5 Heavy Xiragen.
     f["solid_gas_heavy_xiragen"] = make_formula(
         {"xiragen": 1.0, "heavy_xiranite": 2.0, "heavy_xiragen": -5.0}, 0.0
     )
+    f["solid_gas_heavy_xiragen_reverse"] = make_formula(
+        {"xiragen": 1.0, "heavy_xiragen": 5.0, "heavy_xiranite": -2.0}, 0.0
+    )
     f["solid_gas_cuprium_gas"] = make_formula(
         {"xiragen": 0.2, "cup": 2.0, "cuprium_gas": -1.0}, 0.0
+    )
+    f["solid_gas_cuprium_gas_reverse"] = make_formula(
+        {"xiragen": 0.2, "cuprium_gas": 1.0, "cup": -2.0}, 0.0
     )
     f["solid_gas_hetonite_gas"] = make_formula(
         {"xiragen": 0.2, "hetonite": 1.0, "hetonite_gas": -2.0}, 0.0
     )
+    f["solid_gas_hetonite_gas_reverse"] = make_formula(
+        {"xiragen": 0.2, "hetonite_gas": 2.0, "hetonite": -1.0}, 0.0
+    )
     f["solid_gas_pyrrolite_gas"] = make_formula(
         {"xiragen": 0.2, "pyrrolite": 1.0, "pyrrolite_gas": -1.0}, 0.0
+    )
+    # This is the reverse that resolves Pyrrolite's previously-
+    # unreachable gap: Gas Reactor Globe already makes Pyrrolite Gas
+    # (gas_reactor_globe_run below), and this turns it back into solid
+    # Pyrrolite.
+    f["solid_gas_pyrrolite_gas_reverse"] = make_formula(
+        {"xiragen": 0.2, "pyrrolite_gas": 1.0, "pyrrolite": -1.0}, 0.0
     )
 
     # Gas Reactor Globe: Acrid ENV-gated, so it gets the two-layer

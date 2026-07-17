@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from factorylib.endfield import wuling as v1p2e
 from factorylib.endfield.wuling_1p4 import (
     _NEW_RESOURCE_NAMES,
     RESOURCE_NAMES,
@@ -9,6 +10,20 @@ from factorylib.endfield.wuling_1p4 import (
     full_supply,
     search,
 )
+
+
+def _new_1p4_formula_names(config: WulingConfig1p4) -> set[str]:
+    """Every formula name in wuling_1p4's output that isn't also a name
+    in plain 1.2e's own build_formulas() -- computed as a set
+    difference rather than hand-maintained, so it can't silently go
+    stale as more 1.4 formulas get added. Gases (and every other 1.4-
+    specific resource) didn't exist in 1.2e at all and have no base
+    supply of their own, so banning every one of these formulas (via
+    formula_limits=0) structurally eliminates them entirely -- there's
+    no other path to touch them."""
+    base_names = set(v1p2e.build_formulas(v1p2e.WulingConfig()).keys())
+    p4_names = set(build_formulas(config).keys())
+    return p4_names - base_names
 
 
 def test_build_formulas_does_not_raise():
@@ -28,45 +43,62 @@ def test_every_new_resource_has_base_supply_or_a_producer():
     the opposite failure mode (a real distinction with no bridge at all,
     instead of two things wrongly merged into one).
 
-    "pyrrolite" is deliberately excluded: confirmed with the user it
-    must have no base supply (it's crafted, not sourced directly), but
-    no confirmed recipe produces it either -- a known, flagged gap (see
-    _default_base_supply's docstring), not an accidental one like
-    liquid_heavy_xiranite was."""
+    Pyrrolite is no longer a special case (see
+    test_pyrrolite_has_no_base_supply_but_is_reachable_via_reverse_recipe):
+    it now has a producer -- solid_gas_pyrrolite_gas_reverse, turning
+    Gas Reactor Globe's Pyrrolite Gas back into solid Pyrrolite -- so
+    every new resource is checked uniformly here."""
     config = WulingConfig1p4()
     formulas = build_formulas(config)
     supply = full_supply(config)
-    checked_names = [name for name in _NEW_RESOURCE_NAMES if name != "pyrrolite"]
-    producers: dict[str, list[str]] = {name: [] for name in checked_names}
+    producers: dict[str, list[str]] = {name: [] for name in _NEW_RESOURCE_NAMES}
     for formula_name, formula in formulas.items():
-        for resource_name in checked_names:
+        for resource_name in _NEW_RESOURCE_NAMES:
             idx = RESOURCE_NAMES.index(resource_name)
             if formula.consumption[idx] < 0:
                 producers[resource_name].append(formula_name)
 
     unreachable = [
         name
-        for name in checked_names
+        for name in _NEW_RESOURCE_NAMES
         if not producers[name] and supply[RESOURCE_NAMES.index(name)] <= 0.0
     ]
     assert unreachable == []
 
 
-def test_pyrrolite_has_no_base_supply_and_is_currently_unreachable():
-    """Documents the known gap (see _default_base_supply's docstring):
-    Pyrrolite must have zero base supply (confirmed with the user), and
-    no confirmed recipe produces it, so it's currently completely
-    unreachable in this model -- not a bug, but should stay visible so
-    it isn't silently "fixed" by a guessed reverse-recipe rate later
-    without deliberately deciding to do so."""
+def test_pyrrolite_has_no_base_supply_but_is_reachable_via_reverse_recipe():
+    """Pyrrolite must have zero base supply (confirmed with the user:
+    it's crafted, not sourced directly) -- but unlike the earlier gap,
+    it's no longer unreachable: Gas Reactor Globe makes Pyrrolite Gas
+    (2 Hetonite Gas + 1 Xiragen -> 1 Pyrrolite Gas, Acrid ENV), and the
+    reverse of Solid-Gas Transmuting Unit's own Pyrrolite recipe turns
+    that back into solid Pyrrolite (confirmed with the user: both
+    directions of every Fluid-Gas/Solid-Gas Transmuting Unit recipe are
+    modeled, mirroring the forward ratio and activation cost with
+    input/output swapped)."""
     config = WulingConfig1p4()
     formulas = build_formulas(config)
     supply = full_supply(config)
     assert supply[RESOURCE_NAMES.index("pyrrolite")] == 0.0
-    assert not any(
-        formula.consumption[RESOURCE_NAMES.index("pyrrolite")] < 0
-        for formula in formulas.values()
+    assert "solid_gas_pyrrolite_gas_reverse" in formulas
+    assert (
+        formulas["solid_gas_pyrrolite_gas_reverse"].consumption[
+            RESOURCE_NAMES.index("pyrrolite")
+        ]
+        < 0
     )
+    # The unconstrained $-optimal solution may not happen to choose this
+    # path (it now competes with several other reverse recipes for the
+    # same scarce Acrid ENV/Hetonite Gas/Xiragen -- an economic choice,
+    # not unreachability), so verify genuine feasibility directly: give
+    # pyrrolite_part_sell an overwhelming incentive (formula_outputs
+    # already supports overriding a formula's $ value) and confirm the
+    # LP actually produces some.
+    forced_config = WulingConfig1p4(formula_outputs={"pyrrolite_part_sell": 1e9})
+    result, names = search(forced_config)
+    assert result.status == "optimal"
+    rates = dict(zip(names, result.formula_rates))
+    assert rates["pyrrolite_part_sell"] > 0.0
 
 
 def test_build_formulas_reuses_1p2e_recipes_unchanged():
@@ -218,7 +250,21 @@ def test_stable_env_xiranite_recipe_needs_less_carbon_than_plain():
 
 
 def test_search_prefers_stable_env_xiranite_when_available():
-    result, names = search(WulingConfig1p4())
+    """With the default config, Stable ENV allowance is a genuinely
+    scarce resource shared with other gated recipes (the Purification
+    Unit Stable-ENV variants, now economically attractive too since
+    Heavy Xiragen/Pyrrolite Gas feed real value), so some Xiranite may
+    still go through the plain (more expensive) route once Stable ENV
+    capacity runs out. Isolate the Forge-of-the-Sky-specific preference
+    by banning the other Stable-ENV-gated recipes, confirming the
+    cheaper route is used exclusively once it isn't contested."""
+    config = WulingConfig1p4(
+        formula_limits={
+            "purification_heavy_xiragen_stable_alloc": 0.0,
+            "purification_hetonite_gas_stable_alloc": 0.0,
+        }
+    )
+    result, names = search(config)
     rates = dict(zip(names, result.formula_rates))
     assert rates["xi_forge_stable_env_alloc"] > 0.0
     assert rates["xi_forge_alloc"] == pytest.approx(0.0)
@@ -325,41 +371,139 @@ def _1p2e_matching_base_supply():
     return supply
 
 
-def test_reproduces_1p2e_historical_dollar_figure_exactly():
-    """The core "no folded formulas, should match past results" check:
-    given the same base supply 1.2e's own historical $-optimal test uses
-    (ori=540, ferr=90, cup_ore=240, no Inergen/Xiragen), wuling_1p4's
-    fully-unfolded model must reproduce the exact same $1415.99...
-    (206735/146) figure -- not approximately, exactly, since every new
-    formula here is either a lossless pass-through or genuinely unused
-    at this base supply level.
+# Formulas that replace a 1.2e abstraction with equivalent real-recipe
+# capability (Forge of the Sky's new 3-way split, the Carbon chain
+# feeding it, and Yazhen/Jincao's unfolded 3 stages) -- required for an
+# exact 1.2e reproduction, since without them Xiranite/Yazhen Solution/
+# Jincao Solution would have literally no source at all, not just a
+# less-generous one. Everything else new_1p4_formula_names finds is
+# purely additive (the wider gas economy, Crafting Points, Pyrrolite,
+# the two new sell formulas) and gets banned for the exact-match tests
+# below -- confirmed empirically, not just reasoned about, that banning
+# exactly this complement reproduces the historical figures bit-exactly
+# (gases didn't exist in 1.2e at all, and every path to touch them goes
+# through a banned formula, so this fully removes them from the model).
+_REQUIRED_1P4_INFRASTRUCTURE = frozenset(
+    {
+        "xi_forge_alloc",
+        "xi_forge_stable_env_alloc",
+        "xi_forge_run",
+        "xi_forge_stable_env_run",
+        "hx_forge_alloc",
+        "buckflower_plant",
+        "carbon_from_buckflower",
+        "carbon_from_sandleaf",
+        "carbon_from_jincao",
+        "carbon_from_yazhen",
+        "carbon_powder_make",
+        "dense_carbon_powder_make",
+        "stabilized_carbon_make",
+        "yazhen_plant",
+        "yazhen_powder_make",
+        "jincao_plant",
+        "jincao_powder_make",
+    }
+)
 
-    This caught two real bugs before passing: (1) WulingConfig1p4 was
-    passing metatransfers=[] to the underlying 1.2e config, silently
-    making metatransfer_option_0 -- used at rate 1.0 in the real
-    historical solution -- permanently unavailable; (2) full_supply()
-    never credited metatransfer_allowance at all, so enabling
-    metatransfers alone wouldn't have been enough either. Also
-    surfaced that 1.2e's own sandleaf_plant limit (5) is too tight
-    once Sandleaf gets a new competing consumer (the Carbon chain) --
-    see DEFAULT_PLANTING_LIMIT's docstring."""
-    config = WulingConfig1p4(base_supply=_1p2e_matching_base_supply())
+
+def _1p2e_equivalent_formula_limits(config: WulingConfig1p4) -> dict[str, float]:
+    """Ban every purely-additive 1.4 formula (the wider gas economy,
+    Crafting Points, Pyrrolite, the two new sell formulas), keeping only
+    the required replacement infrastructure active -- see
+    _REQUIRED_1P4_INFRASTRUCTURE."""
+    to_ban = _new_1p4_formula_names(config) - _REQUIRED_1P4_INFRASTRUCTURE
+    return {name: 0.0 for name in to_ban}
+
+
+def test_reproduces_1p2e_historical_dollar_figure_exactly_with_gas_economy_disabled():
+    """The core "no folded formulas, should match past results" check,
+    done properly per the user's own suggestion: rather than relying on
+    zero Inergen/Xiragen base supply alone (insufficient -- gases can
+    still be bootstrapped from otherwise-abundant Xiranite/Liquid
+    Xiranite via the Fluid-Gas/Solid-Gas Transmuting Unit's own
+    self-referential recipes, which is a real, intentional capability,
+    not a bug), explicitly ban every formula that isn't required
+    replacement infrastructure for Forge of the Sky/the Carbon chain/
+    Yazhen-Jincao's unfolding. With the wider gas economy fully and
+    explicitly disabled this way, the fully-unfolded model reproduces
+    1.2e's historical $1415.99... (206735/146) figure exactly, not just
+    "at least" -- confirming the unfolding itself is truly lossless."""
+    probe_config = WulingConfig1p4(base_supply=_1p2e_matching_base_supply())
+    config = WulingConfig1p4(
+        base_supply=_1p2e_matching_base_supply(),
+        formula_limits=_1p2e_equivalent_formula_limits(probe_config),
+    )
     result, names = search(config)
     assert result.status == "optimal"
     assert result.dollar_output == pytest.approx(206735 / 146)
 
 
-def test_reproduces_1p2e_ban_ya_historical_figure():
+def test_reproduces_1p2e_ban_ya_historical_figure_exactly_with_gas_economy_disabled():
+    """Same as above, but the ban-ya historical invariant."""
+    probe_config = WulingConfig1p4(base_supply=_1p2e_matching_base_supply())
+    config = WulingConfig1p4(
+        base_supply=_1p2e_matching_base_supply(),
+        formula_limits={
+            **_1p2e_equivalent_formula_limits(probe_config),
+            "ya": 0.0,
+            "jincao_tea": 0.0,
+        },
+    )
+    result, names = search(config)
+    assert result.status == "optimal"
+    assert result.dollar_output == pytest.approx(205129 / 146)
+
+
+def test_matches_or_exceeds_1p2e_historical_dollar_figure():
+    """The core "no folded formulas, should match past results" check:
+    given the same base supply 1.2e's own historical $-optimal test uses
+    (ori=540, ferr=90, cup_ore=240, no Inergen/Xiragen), wuling_1p4's
+    fully-unfolded model must reach AT LEAST the historical $1415.99...
+    (206735/146) figure -- not exactly, anymore, now that the Fluid-Gas/
+    Solid-Gas Transmuting Unit's reverse recipes are modeled too (see
+    test_pyrrolite_has_no_base_supply_but_is_reachable_via_reverse_recipe):
+    those genuinely unlock new value 1.2e never had access to (e.g.
+    bootstrapping Xiragen from otherwise-"free" Xiranite via
+    solid_gas_xiragen, then routing it through the wider gas network),
+    even starting from zero Inergen/Xiragen base supply. This is
+    expected, not a regression -- adding more feasible options to an
+    LP's search space can only weakly improve its optimum, never hurt
+    it (basic LP monotonicity), so ">=" is the correct invariant here,
+    not "==". The unfolding's own correctness (not just "doesn't regress
+    the $ figure") is separately verified at the ratio level by
+    test_yazhen_and_jincao_are_fully_unfolded_not_collapsed,
+    test_yazhen_jincao_unfolded_ratio_preserves_1p2e_batch_size, and the
+    Carbon-chain ratio tests below, which don't depend on what the wider
+    gas network does.
+
+    This caught two real bugs before even reaching that "no regression"
+    bar: (1) WulingConfig1p4 was passing metatransfers=[] to the
+    underlying 1.2e config, silently making metatransfer_option_0 --
+    used at rate 1.0 in the real historical solution -- permanently
+    unavailable; (2) full_supply() never credited metatransfer_allowance
+    at all, so enabling metatransfers alone wouldn't have been enough
+    either. Also surfaced that 1.2e's own sandleaf_plant limit (5) is
+    too tight once Sandleaf gets a new competing consumer (the Carbon
+    chain) -- see DEFAULT_PLANTING_LIMIT's docstring."""
+    config = WulingConfig1p4(base_supply=_1p2e_matching_base_supply())
+    result, names = search(config)
+    assert result.status == "optimal"
+    assert result.dollar_output >= 206735 / 146 - 1e-6
+
+
+def test_matches_or_exceeds_1p2e_ban_ya_historical_figure():
     """Second historical invariant, banning ya/jincao_tea (see
     wuling.py's own test for why both must be banned together --
-    they're perfect economic substitutes)."""
+    they're perfect economic substitutes). See
+    test_matches_or_exceeds_1p2e_historical_dollar_figure for why ">="
+    rather than "==" is the correct invariant now."""
     config = WulingConfig1p4(
         base_supply=_1p2e_matching_base_supply(),
         formula_limits={"ya": 0.0, "jincao_tea": 0.0},
     )
     result, names = search(config)
     assert result.status == "optimal"
-    assert result.dollar_output == pytest.approx(205129 / 146)
+    assert result.dollar_output >= 205129 / 146 - 1e-6
 
 
 def test_metatransfer_option_available_and_credited():
