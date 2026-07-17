@@ -178,27 +178,38 @@ but only once real 1.4 numbers confirm this is worth the complexity.
 
 ### Forge of the Sky: real recipes now confirmed (was previously an abstraction)
 Real recipes, replacing 1.2e's abstracted `forge_budget`-allocated
-`xiranite_forge_alloc`/`heavy_xiranite_forge_alloc`:
+`xiranite_forge_alloc`/`heavy_xiranite_forge_alloc`. **3 total recipes**
+a Forge of the Sky building can run (confirmed with the user):
 ```
 Forge of the Sky: 2 Stabilized Carbon + 1 Water -> 1 Xiranite (every 2s)
+Forge of the Sky: 1 Carbon + 1 Water -> 1 Xiranite (every 2s, Stable ENV)
 Forge of the Sky: 10 Xiranite + 5 Xircon Effluent -> 1 Heavy Xiranite (every 10s)
 ```
-Heavy Xiranite is now downstream of Xiranite (a real consumption, not a
-separate capacity allocation) rather than the old two-parallel-outputs
-framing. **Confirmed with the user**: global cap is 12 Forge of the Sky
+The second recipe (from 1p4_new_features.md/kaneko_1p4_data_sheet.md's
+original "New Recipes" listing) is a cheaper Stable-ENV-gated
+alternative to the first (1 Carbon instead of 2 Stabilized Carbon) --
+so a building placed inside a Gas Dispersing Unit's Stable field has a
+strictly better option for Xiranite than one that isn't. Heavy Xiranite
+is now downstream of Xiranite (a real consumption, not a separate
+capacity allocation) rather than the old two-parallel-outputs framing.
+
+**Confirmed with the user**: global cap is 12 Forge of the Sky
 buildings total (same number as 1.2e's `max_forges=12` default -- good
-continuity), each committed to EITHER the Xiranite recipe OR the Heavy
-Xiranite recipe, not both -- so the *shared-integer-pool, competing
-consumers* mechanic from 1.2e (`forge_budget`) is still the right
-shape, just feeding real recipe formulas instead of an abstraction
-(and possibly literally still `max_forges=12` as the default, unless
-1.4 changes it). Concretely: keep a
-`forge_budget`-like virtual resource, with two `integer=True` Formula
-entries (`xi_forge_alloc`, `hx_forge_alloc`) each consuming 1 unit of
-it and producing the *capacity* to run the corresponding real recipe
-(mirroring `wuling.py`'s existing `xiranite_forge_alloc`/
-`heavy_xiranite_forge_alloc` pattern almost exactly -- this is closer
-to a rename/rewire than a new mechanic).
+continuity), each committed to exactly ONE of these 3 recipes at a
+time -- so the *shared-integer-pool, competing consumers* mechanic from
+1.2e (`forge_budget`) is still the right shape, just with 3 competing
+allocations instead of 2, and feeding real recipe formulas instead of
+an abstraction. This is closer to `wuling.py`'s existing
+`metatransfer_option_*` pattern (N mutually-exclusive integer choices
+drawing from one shared pool) than the old simple xi/hx 2-way split:
+keep a `forge_budget`-like virtual resource, with three
+`integer=True` Formula entries (`xi_forge_alloc`,
+`xi_forge_stable_env_alloc`, `hx_forge_alloc`) each consuming 1 unit of
+it and producing the *capacity* to run the corresponding real recipe.
+The Stable-ENV variant additionally needs to be gated on Stable ENV
+actually being active (see the Gas Dispersing Unit / environments
+section below) -- two independent integer constraints stacked on one
+recipe, not just one.
 
 ### Dollar target: single combined pool (confirmed)
 **Confirmed with the user**: model the new Cloudseeder Station outpost
