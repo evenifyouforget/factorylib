@@ -165,3 +165,29 @@ def test_refine_dollar_output_exceeds_target_on_1p2e_full():
     assert quota > pp_goals.delivery_jobs_per_day
     assert rates.get("cuprium_component", 0.0) > 0.0
     assert rates.get("xiranite_component", 0.0) > 0.0
+
+
+def test_refine_lower_power_hard_cap_frees_more_dollar_headroom():
+    """Regression for tmp_notes/adjust_power_curve.md: there's no real
+    justification for tolerating 40% power overshoot (a battery's charge
+    cycle only wastes <1% of its energy near realistic demand levels,
+    and DIGE's ~5-10% overshoot convention already covers essentially
+    all practical cases) -- power_hard_cap_ratio=1.40 just let the
+    search tie up battery capacity in power well past the point of
+    diminishing returns, capacity that has better uses (more sellable
+    $ output) once freed. Confirms a materially tighter hard cap (10%)
+    yields strictly more dollar output than a looser one (40%), with
+    power still comfortably above its own target either way -- a
+    concrete "is this actually better" check, not just "does it still
+    run"."""
+    config = WulingConfig()
+    base = search(config)
+    search_config = SearchConfig(iterations=6000, seed=0)
+
+    loose = refine(
+        base, config, PPGoals(power_hard_cap_ratio=1.40), search_config, backend="sa"
+    )
+    tight = refine(
+        base, config, PPGoals(power_hard_cap_ratio=1.10), search_config, backend="sa"
+    )
+    assert tight.dollar_output > loose.dollar_output

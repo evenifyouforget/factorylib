@@ -10,27 +10,72 @@ between sessions.
 - PR #13 ("Specialize for Endfield: Endfield-specific multi-goal
   solving, integer formulas, CLI") merged to `main` at `fe099a3`.
 - Current branch: `wuling-1p4`, for Endfield 1.4 content.
-- Repo state on this branch: 3099 tests passing, `ruff check`/`ruff
+- Repo state on this branch: 3100 tests passing, `ruff check`/`ruff
   format --check` clean. Default CLI run (`python -m factorylib.endfield`):
   - Optimal ($-only): $1415.99/min (129.9% of $1090 stock-bill goal)
-  - Most-fit (refined): $1125.47/min (103.2%), Power 9800W (140.0%,
+  - Most-fit (refined): $1178.63/min (108.1%), Power 7700W (110.0%,
     hard cap), Delivery quota 184.0% of 2 jobs/day, Cuprium Component
     200%, Xiranite Component 20%, **Hetonite Component 0%** (see below)
+  - (numbers above reflect the power-curve retune and box-capacity fix
+    applied this session -- see "Applied this session" below)
+
+## Applied this session (adjust_power_curve.md / clarification_delivery.md)
+
+- **power_hard_cap_ratio: 1.40 -> 1.10** (`PPGoals`, `pp_goals.py`).
+  adjust_power_curve.md's physical argument: a battery's energy reserve
+  only overcharges in the "drain and fill" regime, and even there loss
+  stays under ~1% near realistic demand; real loss mostly comes from
+  balancer-fraction approximation error, and DIGE's ~5% (soft cap,
+  unchanged) / ~10% (hard cap) convention already covers essentially
+  all practical demands -- "there is no need for 40% excess power".
+  Verified empirically (not just applied blindly): with the loose 140%
+  cap, dollar output was 103.2% of target; with the tight 110% cap,
+  108.1% -- strictly better, confirmed deterministic across 10 seeds,
+  and power/quota/other-components unaffected either way. Regression
+  test: `test_refine_lower_power_hard_cap_frees_more_dollar_headroom`.
+  Does NOT fix Hetonite Component (still exactly 0) -- traced that
+  specifically (see below), it's a separate, deeper issue that freeing
+  more battery capacity doesn't touch.
+- **delivery_box_capacity: 14000 -> 12000** (`PPGoals`, `pp_goals.py`)
+  per clarification_delivery.md's correction to the real per-job amount.
+- **Labeling bug fixed**: `ya`/`yc`/`jincao_tea`/`jincao_drink`
+  (Yazhen Syringe A/C, Jincao Tea/Drink) are dollar-earning formulas
+  exactly like `sc_sell`/`hp_sell`/etc., and can equally accumulate
+  unsold surplus in the depot -- but unlike those, their
+  `FORMULA_LABELS` entries never got the `"(sold)"` suffix. Found via a
+  test failure after the power-curve retune shifted which good ends up
+  "the" unsold one in `test_main_delivery_prediction_includes_unsold_goods`'s
+  forced-low-stock-bill-cap scenario. Now consistent.
+
+### Hetonite Component: sharper root-cause diagnosis (still unresolved)
+Traced *why* it's stuck at 0, beyond "resource tension": the real
+recipe needs 12 Hetonite Part + 12 Heavy Xiranite per Hetonite Component
+multiple, but the Nonzero Production Goal tiers reward reaching just
+~0.1 units of Hetonite Part -- so the upstream chain (Cuprium Ore ->
+... -> Hetonite Part) only ever gets incentivized to produce a tiny
+fraction of a unit, nowhere near the 12 needed to unlock even one
+Hetonite Component multiple. This is a **batch-size cliff**, not a
+resource-competition issue -- confirmed Heavy Xiranite supply itself is
+NOT the bottleneck (`hx_make` runs at the same rate as the $-only
+baseline). Lowering power's hard cap (freeing more battery capacity)
+did nothing for it, as expected once you see it's not battery-capacity
+limited at all. Likely fix once we look at it directly: either give
+`pp_hetonite_part`'s Nonzero Production Goal tiers a first_cap closer
+to the real 12-unit threshold (so partial progress isn't "free" until
+the recipe can actually complete), or a dedicated
+`hard_satisfaction_bonus`-style gate sized to the real batch
+requirement. Not attempted yet -- flagged as the concrete next step if
+we want to close this out before 1.4 recipes land.
 
 ## Carried-over / deferred scope (from PR #13's own MR checklist)
 
-- **Hetonite Component stuck at 0** -- confirmed genuine 3-way resource
-  tension (dollar > 100% vs power at its hard cap vs Hetonite Component
-  all compete for the same upstream Cuprium/battery-adjacent resource
-  chain). Boosting Hetonite's own pp reward revives it but only by
-  giving back the dollar/power gains. Was already marginal (3.4%)
-  before the pp_decay retune that fixed dollar's stuck-at-100% bug.
-  Needs dedicated recipe/resource-flow investigation (is there a
-  cheaper real path to Hetonite Part that doesn't compete with SC
-  Wuling Battery's Cuprium/Ferrium inputs?), not another weight nudge.
-  **Revisit once 1.4's real recipes are in** -- new Hetonite routes
-  (see below) may resolve this on their own, making further tuning of
-  the *old* recipe set moot.
+- **Hetonite Component stuck at 0** -- root-caused further this session
+  to a batch-size cliff (see "Hetonite Component: sharper root-cause
+  diagnosis" above), not the 3-way resource tension originally
+  suspected (confirmed freeing more battery capacity via the power-curve
+  fix doesn't move it at all). **Revisit once 1.4's real recipes are
+  in** -- new Hetonite routes may resolve this on their own, making
+  further tuning of the *old* recipe set moot.
 - **Multi-seed "best-of-N" refine wrapper** -- the SA search is
   single-seed by default (`--refine-seed`/`-R` exist for manual
   control, but nothing automatically tries several seeds and keeps the
@@ -118,6 +163,19 @@ until real numbers/examples are confirmed**, since the note explicitly
 says "a true 1/5 splitter is still hard" in general, just not in this
 one case.
 
+**Cross-reference**: `/workspaces/claude-code-devcontainers/batterylib`
+(sibling repo) already models the *general* virtual-splitter problem --
+`ALL_VSPLITTER_DEFS` in `batterylib/models.py` gives real achievable
+balancer fractions with an associated weight_cost, including 1/5 and
+1/7 (both via a PASS/RECYCLE/DISCARD cycle, weight_cost 50/60 --
+notably *not* free, unlike our current `_NICE_DENOMINATORS` which is
+pure powers of 2 and 3 with no cost gradation at all). If the 1.4 flow
+limiter turns out to make a genuinely wide set of denominators cheap
+(not just the one tutorial example), it may be worth pulling
+`ALL_VSPLITTER_DEFS`-style weighted costs into `factorylib.simplicity`
+instead of the current flat "in _NICE_DENOMINATORS or not" model --
+but only once real 1.4 numbers confirm this is worth the complexity.
+
 ### Alternate gear crafting (Component substitution hierarchy)
 Higher-tier Components can substitute for lower-tier gear recipes
 (Hetonite Component -> Xiranite-tier gears, but not reverse). Pyrrolite
@@ -125,13 +183,35 @@ Component gets a 99% Wuling-Stock-Bill-cost discount, effectively
 making it $-free and only Component-supply-limited -- per the notes
 author's own read, this may make producing Xiranite/Cuprium/Hetonite
 Component "completely unnecessary for endgame users" once Pyrrolite
-exists. **Implication for our model**: once real numbers land, this
-probably means each gear-tier's Formula should have one entry per
-eligible Component type (Pyrrolite substitutable in for all 4 tiers,
-Hetonite for tiers 1-3, etc.), all competing for the same $-maximizing
-LP naturally -- no new mechanism needed, just more Formula entries,
-same as how `sc_sell`/`hp_sell`/etc. already all compete for the same
-Wuling Stock Bill cap.
+exists.
+
+**Better design than my first take** (see flexible_gear_crafting.md):
+rather than O(N^2) substitution Formula entries (one per eligible
+Component-type x gear-tier pair -- 4+3+2+1=10 entries across 4 tiers,
+growing quadratically every time a new tier gets added in a future
+update), use a linear "Crafting Point" conversion chain instead:
+```
+50 Pyrrolite Component -> 1 T4 Crafting Point
+50 Hetonite Component  -> 1 T3 Crafting Point
+50 Cuprium Component   -> 1 T2 Crafting Point
+50 Xiranite Component  -> 1 T1 Crafting Point
+1 T4 Crafting Point -> 2 T3 Crafting Point
+1 T3 Crafting Point -> 5 T2 Crafting Point
+1 T2 Crafting Point -> 1 T1 Crafting Point
+```
+Each gear tier's own crafting formula then just consumes its own
+`T_n Crafting Point` (not a direct Component), so producing ONLY
+Pyrrolite Component and cascading it down through the chain can supply
+all 4 gear tiers -- adding a future T5 tier means adding one new
+Component->Point conversion plus one new Point->Point step down, not
+retrofitting every existing lower tier. Same "just more ordinary
+Formula entries competing in the same LP" principle as my original
+idea, just a better *shape* for it. The 99% discount isn't modeled in
+this scheme yet -- the working hypothesis is the LP will prefer
+Pyrrolite Component anyway once given the choice; only add explicit
+discount-modeling if that turns out not to hold once real numbers are
+in. Conversion ratios above (50:1, 2/5/1 for T4->T3->T2->T1) are the
+current best guess, not yet confirmed against real 1.4 data.
 
 ### "Kaneko's 6/min Science" (speculative, unconfirmed)
 Open questions about how flow-rate limiting is actually implemented

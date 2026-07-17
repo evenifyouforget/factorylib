@@ -202,7 +202,20 @@ def satisfaction_tiers(
     infinite, so overshooting past it earns literally nothing further.
 
     Hard Satisfaction Goal (e.g. power): soft_cap_ratio/hard_cap_ratio
-    close to 1.0 (e.g. 1.05/1.40 per DIGE's ~5%-overshoot convention).
+    close to 1.0 (e.g. 1.05/1.10). These aren't hand-picked: a battery's
+    energy reserve only overcharges (wasting energy during the charging
+    part of its cycle) in the "drain and fill" regime, not the "average
+    power" regime, and even there the loss stays under ~1% across a
+    700W-wide band around a 6600W-ish demand (one SC Wuling Battery
+    charge cycle is 3200W x 40s = 128000J, comfortably above a 100000J
+    reserve). A theoretically perfect balancer wastes nothing at all;
+    real loss mostly comes from using a simpler-than-exact fraction to
+    approximate demand, and empirically 5% overshoot tolerance (soft
+    cap) already covers most demands, 10% (hard cap) covers essentially
+    all of them -- there's no real justification for a much larger
+    margin like 40%, which just wastes battery capacity that has better
+    uses elsewhere (see this function's own pp_decay note below for why
+    that capacity wasn't actually reaching those other uses before).
     Soft Satisfaction Goal (e.g. sellable goods): both ratios much
     larger (e.g. 1.20/3.00) -- overshoot keeps mattering for a long
     stretch before finally being capped.
@@ -336,7 +349,9 @@ class PPGoals:
         *_bonus_pp: hard_satisfaction_bonus's lump reward for reaching
             that goal's target in one go.
         delivery_box_capacity/delivery_jobs_per_day: the real depot
-            mechanic's own numbers (14000/box, 2 jobs/day by default).
+            mechanic's own numbers (12000/box, 2 jobs/day by default --
+            box capacity was previously assumed to be 14000, corrected
+            down to 12000 per confirmed real-game data).
         delivery_quota_max_multiple: the "at most one box's worth from
             any single material" cap _materialize_delivery_quotas is
             built around; raise to relax back toward "any solid can
@@ -360,10 +375,10 @@ class PPGoals:
 
     power_target: float = 7000.0
     power_soft_cap_ratio: float = 1.05
-    power_hard_cap_ratio: float = 1.40
+    power_hard_cap_ratio: float = 1.10
     power_bonus_pp: float = 2000.0
 
-    delivery_box_capacity: float = 14_000.0
+    delivery_box_capacity: float = 12_000.0
     delivery_jobs_per_day: float = 2.0
     delivery_quota_max_multiple: float = 1.0
     delivery_quota_soft_cap_ratio: float = 1.10
