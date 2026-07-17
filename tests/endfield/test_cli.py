@@ -104,7 +104,7 @@ def test_main_delivery_prediction_includes_unsold_goods(capsys):
     stock-bill cap forces this deterministically. Which specific good(s)
     end up "the" unsold one is refine()-seed/pp-tier-weighting sensitive
     (not the thing being tested here), so this only checks that at least
-    one *sold* good (as opposed to a pure delivery-quota/base-resource
+    one *sellable* good (as opposed to a pure delivery-quota/base-resource
     material) shows up as a delivery-job candidate -- i.e. that unsold
     surplus really does feed into the prediction, not just leftover
     slack."""
@@ -112,7 +112,7 @@ def test_main_delivery_prediction_includes_unsold_goods(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     delivery_section = out[out.index("Delivery job prediction") :]
-    assert "(sold)" in delivery_section
+    assert "(sellable)" in delivery_section
 
 
 def test_main_income_breakdown_respects_stock_bill_cap_flag(capsys):

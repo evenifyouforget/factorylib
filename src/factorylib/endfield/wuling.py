@@ -469,13 +469,13 @@ FORMULA_LABELS = {
         "SC Wuling Battery Packaging (Xircon + Dense Originium Powder → "
         "SC Wuling Battery)"
     ),
-    "sc_sell": "SC Wuling Battery (sold)",
+    "sc_sell": "SC Wuling Battery (sellable)",
     "sc_power": "Thermal Bank (SC Wuling Battery → Power)",
     "lc_make": (
         "LC Wuling Battery Packaging (Xiranite + Dense Originium Powder → "
         "LC Wuling Battery)"
     ),
-    "lc_sell": "LC Wuling Battery (sold)",
+    "lc_sell": "LC Wuling Battery (sellable)",
     "lc_power": "Thermal Bank (LC Wuling Battery → Power)",
     "cuprium_powder_make": "Cuprium Powder Shredding (Cuprium → Cuprium Powder)",
     "cuprium_solution_make": (
@@ -488,21 +488,21 @@ FORMULA_LABELS = {
         "Hetonite Reaction (Hetonite Solution + Ferrium Powder → Hetonite + Sewage)"
     ),
     "hp_make": "Hetonite Part Fitting (Hetonite → Hetonite Part)",
-    "hp_sell": "Hetonite Part (sold)",
+    "hp_sell": "Hetonite Part (sellable)",
     "hx_make": "Heavy Xiranite Forge (Xiranite + Xircon Effluent → Heavy Xiranite)",
-    "hx_sell": "Heavy Xiranite (sold)",
+    "hx_sell": "Heavy Xiranite (sellable)",
     "ferrium_part_make": "Ferrium Part Fitting (Ferrium → Ferrium Part)",
     "cuprium_bottle_make": "Cuprium Bottle Moulding (Cuprium → Cuprium Bottle)",
     "ferrium_bottle_make": "Ferrium Bottle Moulding (Ferrium → Ferrium Bottle)",
     "yazhen_solution_make": "Yazhen Solution (Planting + Shredding + Reactor Crucible)",
     "jincao_solution_make": "Jincao Solution (Planting + Shredding + Reactor Crucible)",
-    "ya": "Yazhen Syringe A (sold)",
-    "yc": "Yazhen Syringe C (sold)",
-    "jincao_tea": "Jincao Tea (sold)",
-    "jincao_drink": "Jincao Drink (sold)",
-    "xi_sell": "Xiranite (sold)",
+    "ya": "Yazhen Syringe A (sellable)",
+    "yc": "Yazhen Syringe C (sellable)",
+    "jincao_tea": "Jincao Tea (sellable)",
+    "jincao_drink": "Jincao Drink (sellable)",
+    "xi_sell": "Xiranite (sellable)",
     "cuprium_part_make": "Cuprium Part Fitting (Cuprium → Cuprium Part)",
-    "cp_sell": "Cuprium Part (sold)",
+    "cp_sell": "Cuprium Part (sellable)",
     "purify": "Purification Building (Inert Xircon Effluent → Xircon Effluent)",
     "purify_node": "Test Area Purification Node (Sewage → Xircon Effluent)",
     "ferrium_component": "Ferrium Component",
