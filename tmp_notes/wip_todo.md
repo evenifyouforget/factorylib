@@ -288,7 +288,7 @@ confirmed mechanics before encoding anything here.
 -- `src/factorylib/endfield/wuling_1p4.py` reuses every unchanged 1.2e
 formula (via `wuling.build_formulas()` + zero-padding to the extended
 resource vector) and only replaces/adds what 1.4 actually changes. 1.2e
-itself is completely untouched. 93 formulas total, 13 tests in
+itself is completely untouched. 94 formulas total, 18 tests in
 `tests/endfield/test_wuling_1p4.py`, all passing.
 
 **Built and validated**:
@@ -327,12 +327,43 @@ even though they're already fixed):
   caught either, which is itself worth noting as a coverage gap.
 - Giving Pyrrolite a `math.inf` placeholder supply made the LP
   genuinely unbounded once `pyrrolite_part_sell` was added (infinite
-  Pyrrolite -> infinite $). Switched Carbon/Stabilized Carbon/Pyrrolite
-  to a large-but-finite placeholder (`_PLACEHOLDER_SUPPLY = 10_000.0`)
-  instead. This is *not* a real number and must be replaced once real
-  supply data exists -- it currently dominates the reported $ output
-  ($141590 for the default config, ~$140000 of which is just the
-  placeholder Pyrrolite feeding pyrrolite_part_sell).
+  Pyrrolite -> infinite $). Switched Carbon/Stabilized Carbon to a
+  large-but-finite placeholder (`_PLACEHOLDER_SUPPLY = 10_000.0`)
+  instead. Still not a real number, must be replaced once real supply
+  data exists.
+- Missing the "Reactor Crucible: 1 Heavy Xiranite + 1 Acid -> 1 Liquid
+  Heavy Xiranite" formula entirely -- `liquid_heavy_xiranite` had a
+  consumer (`fluid_gas_heavy_xiragen`) but no producer and no base
+  supply, silently making that recipe permanently infeasible. Caught by
+  re-auditing the whole Xiranite/Heavy Xiranite solid/liquid/gas family
+  for the "two things wrongly treated as fungible" bug class this
+  project has been bitten by before (DOP/Origocrust) -- this was the
+  opposite failure mode (a real distinction with no bridge at all, not
+  two things merged into one). Fixed; added a general regression test
+  (`test_every_new_resource_has_base_supply_or_a_producer`) plus
+  targeted ones confirming Xiranite's and Heavy Xiranite's three forms
+  stay genuinely distinct and non-free to convert between.
+
+**Confirmed with the user, applied**:
+- Ferrium Ore's 120 (vs. 1.2e's own 90) is correct for 1.4; 1.2e's
+  default stays at 90 untouched.
+- **Pyrrolite has zero base supply** (it must be crafted, not sourced
+  directly) -- but no confirmed recipe produces raw Pyrrolite either.
+  The only visible path is the *reverse* of "Solid-Gas Transmuting Unit:
+  Xiragen[6/min] + 1 Pyrrolite -> 1 Pyrrolite Gas" (turning Pyrrolite
+  Gas back into solid Pyrrolite), one of the 6 unmodeled reverse
+  Transmuting Unit recipes (rate never given). Until that's confirmed,
+  Pyrrolite -- and everything downstream (Pyrrolite Part, Pyrrolite
+  Component, the T4 Crafting Point tier, pyrrolite_part_sell) -- is
+  structurally unreachable, not just currently at rate 0. Deliberately
+  not papered over with a guessed reverse-recipe ratio (e.g. mirroring
+  the forward 1:1) since a wrong guess would propagate through
+  Pyrrolite's whole downstream chain; a dedicated test
+  (`test_pyrrolite_has_no_base_supply_and_is_currently_unreachable`)
+  documents this so it isn't silently "fixed" later without deciding to.
+  Default config's $-optimal output dropped from $141590 (dominated by
+  the since-removed placeholder Pyrrolite supply feeding
+  pyrrolite_part_sell) back to a sane $1590.60.
 
 **Not yet done** (deliberately out of scope for this pass, per "most of
 the work is in the new recipes"):

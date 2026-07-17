@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from factorylib.endfield.wuling_1p4 import (
+    _NEW_RESOURCE_NAMES,
     RESOURCE_NAMES,
     WulingConfig1p4,
     build_formulas,
@@ -13,6 +14,59 @@ from factorylib.endfield.wuling_1p4 import (
 def test_build_formulas_does_not_raise():
     formulas = build_formulas(WulingConfig1p4())
     assert len(formulas) > 0
+
+
+def test_every_new_resource_has_base_supply_or_a_producer():
+    """Regression for a real bug: liquid_heavy_xiranite was consumed by
+    fluid_gas_heavy_xiragen but no formula produced it and it had no
+    base supply either, silently making that recipe permanently
+    infeasible. Every new 1.4 resource must be either a base-supplied
+    raw material or have at least one formula that produces it (a
+    negative consumption entry) -- this is the general form of the
+    "two things treated as fungible" resource-fidelity bug class
+    wuling.py's own module docstring discusses (DOP/Origocrust), just
+    the opposite failure mode (a real distinction with no bridge at all,
+    instead of two things wrongly merged into one).
+
+    "pyrrolite" is deliberately excluded: confirmed with the user it
+    must have no base supply (it's crafted, not sourced directly), but
+    no confirmed recipe produces it either -- a known, flagged gap (see
+    _default_base_supply's docstring), not an accidental one like
+    liquid_heavy_xiranite was."""
+    config = WulingConfig1p4()
+    formulas = build_formulas(config)
+    supply = full_supply(config)
+    checked_names = [name for name in _NEW_RESOURCE_NAMES if name != "pyrrolite"]
+    producers: dict[str, list[str]] = {name: [] for name in checked_names}
+    for formula_name, formula in formulas.items():
+        for resource_name in checked_names:
+            idx = RESOURCE_NAMES.index(resource_name)
+            if formula.consumption[idx] < 0:
+                producers[resource_name].append(formula_name)
+
+    unreachable = [
+        name
+        for name in checked_names
+        if not producers[name] and supply[RESOURCE_NAMES.index(name)] <= 0.0
+    ]
+    assert unreachable == []
+
+
+def test_pyrrolite_has_no_base_supply_and_is_currently_unreachable():
+    """Documents the known gap (see _default_base_supply's docstring):
+    Pyrrolite must have zero base supply (confirmed with the user), and
+    no confirmed recipe produces it, so it's currently completely
+    unreachable in this model -- not a bug, but should stay visible so
+    it isn't silently "fixed" by a guessed reverse-recipe rate later
+    without deliberately deciding to do so."""
+    config = WulingConfig1p4()
+    formulas = build_formulas(config)
+    supply = full_supply(config)
+    assert supply[RESOURCE_NAMES.index("pyrrolite")] == 0.0
+    assert not any(
+        formula.consumption[RESOURCE_NAMES.index("pyrrolite")] < 0
+        for formula in formulas.values()
+    )
 
 
 def test_build_formulas_reuses_1p2e_recipes_unchanged():
@@ -30,6 +84,55 @@ def test_old_forge_allocation_formulas_are_removed():
     formulas = build_formulas(WulingConfig1p4())
     assert "xiranite_forge_alloc" not in formulas
     assert "heavy_xiranite_forge_alloc" not in formulas
+
+
+def test_xiranite_solid_liquid_gas_forms_are_distinct_resources():
+    """Xiranite (solid, "xi"), Liquid Xiranite ("liquid_xiranite"), and
+    Xiragen (gas, "xiragen") are the same underlying material in three
+    physical states, but -- like the historical DOP/Origocrust bug
+    wuling.py's own module docstring warns about -- must never be
+    treated as fungible: every conversion between them needs its own
+    real Formula with a genuine cost, not a free reinterpretation of the
+    same resource index."""
+    assert (
+        len({RESOURCE_NAMES.index(n) for n in ("xi", "liquid_xiranite", "xiragen")})
+        == 3
+    )
+
+
+def test_converting_between_xiranite_forms_is_never_free():
+    """Every formula that produces xi, liquid_xiranite, or xiragen must
+    also consume something real -- either a genuinely different resource
+    (e.g. Stabilized Carbon for xi_forge_run) or one of the *other* two
+    forms (e.g. liquid_xiranite_make legitimately spends xi to produce
+    liquid_xiranite -- that's a real cost, not a free relabeling, since
+    "one of the three forms" is not the same as "nothing")."""
+    formulas = build_formulas(WulingConfig1p4())
+    forms = {"xi", "liquid_xiranite", "xiragen"}
+    for name, formula in formulas.items():
+        produces_a_form = any(
+            formula.consumption[RESOURCE_NAMES.index(f)] < 0 for f in forms
+        )
+        if not produces_a_form:
+            continue
+        real_cost = any(amount > 0 for amount in formula.consumption)
+        assert real_cost, f"{name} produces a Xiranite form for free"
+
+
+def test_heavy_xiranite_solid_liquid_gas_forms_are_distinct_resources():
+    """Same fidelity check for Heavy Xiranite's three forms -- this is
+    exactly the class of bug caught and fixed while writing this module
+    (liquid_heavy_xiranite had no producer at all; see
+    test_every_new_resource_has_base_supply_or_a_producer)."""
+    assert (
+        len(
+            {
+                RESOURCE_NAMES.index(n)
+                for n in ("heavy_xiranite", "liquid_heavy_xiranite", "heavy_xiragen")
+            }
+        )
+        == 3
+    )
 
 
 def test_search_reaches_optimal_status():

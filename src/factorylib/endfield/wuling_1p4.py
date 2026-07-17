@@ -230,16 +230,31 @@ def make_formula(
 # Confirmed "New Max Raw Material Income" figures (kaneko_1p4_data_sheet.md).
 # Originium Ore/Ferrium Ore are listed as "unchanged" from 1.2e, but
 # Ferrium Ore's confirmed number (120) does not match wuling.py's own
-# DEFAULT_BASE_SUPPLY (90) -- see module docstring, flagged rather than
-# silently reconciled. Carbon/Stabilized Carbon/Pyrrolite have no source
-# recipe or supply number given at all (see module docstring) --
-# _PLACEHOLDER_SUPPLY stands in until real numbers are confirmed.
-# Deliberately finite, not math.inf: Pyrrolite feeds pyrrolite_part_sell
-# (a real $/item price), so an unconstrained supply of it would make the
-# $-maximizing LP genuinely unbounded (caught by search() returning a
-# non-optimal status once that sell formula was added) -- this is large
-# enough to stay out of every other recipe's way for now, but is NOT a
-# real number and must be replaced once real supply data exists.
+# DEFAULT_BASE_SUPPLY (90) -- confirmed with the user this is correct
+# for 1.4 while 1.2e's own 90 stays untouched (not retroactively
+# "fixed", since that would invalidate its own historical tests).
+# Carbon/Stabilized Carbon have no source recipe or supply number given
+# at all (see module docstring) -- _PLACEHOLDER_SUPPLY stands in until
+# real numbers are confirmed. Deliberately finite, not math.inf: an
+# unconstrained supply feeding a real $/item sell price elsewhere would
+# make the $-maximizing LP genuinely unbounded (this already happened
+# once with Pyrrolite -- see below -- caught by search() returning a
+# non-optimal status once pyrrolite_part_sell was added).
+#
+# Pyrrolite deliberately has NO base supply at all (confirmed with the
+# user: it must be crafted, not sourced directly) -- but no confirmed
+# recipe produces raw Pyrrolite either. The only path visible in the
+# source notes is the *reverse* of "Solid-Gas Transmuting Unit: Xiragen
+# [threshold 6/min] + 1 Pyrrolite -> 1 Pyrrolite Gas" (i.e. turning
+# Pyrrolite Gas back into solid Pyrrolite), one of the 6 reverse
+# Transmuting Unit recipes this module deliberately doesn't model
+# because their rates were never given ("every Z seconds" placeholder).
+# Until that's confirmed, Pyrrolite -- and everything downstream of it
+# (Pyrrolite Part, Pyrrolite Component, the T4 Crafting Point tier,
+# pyrrolite_part_sell) -- is structurally unreachable in this model,
+# not just currently produced at rate 0. Flagged rather than guessed at
+# (e.g. mirroring the forward recipe's 1:1 ratio) since a wrong guess
+# here would propagate through Pyrrolite's entire downstream chain.
 DEFAULT_ORIGINIUM_ORE = 540.0
 DEFAULT_FERRIUM_ORE = 120.0
 DEFAULT_CUPRIUM_ORE = 420.0
@@ -258,7 +273,6 @@ def _default_base_supply() -> np.ndarray:
     supply[RESOURCE_NAMES.index("xiragen")] = DEFAULT_XIRAGEN
     supply[RESOURCE_NAMES.index("carbon")] = _PLACEHOLDER_SUPPLY
     supply[RESOURCE_NAMES.index("stabilized_carbon")] = _PLACEHOLDER_SUPPLY
-    supply[RESOURCE_NAMES.index("pyrrolite")] = _PLACEHOLDER_SUPPLY
     return supply
 
 
@@ -392,6 +406,24 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
     )
 
     # ---- New continuous recipes (no stated building-count cap) ----
+    # Reactor Crucible: 1 Heavy Xiranite + 1 Acid -> 1 Liquid Heavy
+    # Xiranite (Acid is free/unconstrained, matching wuling.py's own
+    # Water/Acid convention -- see its module docstring). Mirrors 1.2e's
+    # own liquid_xiranite_make (Xiranite -> Liquid Xiranite) exactly.
+    # This was missing from an earlier draft, leaving
+    # liquid_heavy_xiranite with no possible source at all and silently
+    # making fluid_gas_heavy_xiragen permanently infeasible -- caught by
+    # re-auditing the whole Xiranite/Heavy Xiranite solid/liquid/gas
+    # family for the kind of "two different resources treated as
+    # fungible" mistake this project has been bitten by before (the
+    # historical DOP/Origocrust bug wuling.py's own module docstring
+    # discusses); this is the opposite failure mode (a real distinction
+    # accidentally left with no bridge at all, not two things wrongly
+    # merged), but the same "audit every resource's actual production
+    # path" fix applies.
+    f["reactor_crucible_liquid_heavy_xiranite"] = make_formula(
+        {"heavy_xiranite": 1.0, "liquid_heavy_xiranite": -1.0}, 0.0
+    )
     f["fitting_unit"] = make_formula({"pyrrolite": 5.0, "pyrrolite_part": -1.0}, 0.0)
     f["moulding_unit"] = make_formula(
         {"cup": 2.0, "inergen": 1.0, "cuprium_canister": -1.0}, 0.0
