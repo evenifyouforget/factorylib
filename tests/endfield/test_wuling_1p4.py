@@ -308,3 +308,171 @@ def test_formula_limits_and_outputs_overrides_work():
 def test_unknown_formula_override_raises():
     with pytest.raises(ValueError):
         build_formulas(WulingConfig1p4(formula_limits={"not_a_real_formula": 1.0}))
+
+
+# ---- "No folded formulas" (confirmed with the user): 1.2e's own
+# yazhen_solution_make/jincao_solution_make collapse Planting+Shredding+
+# Reactor Crucible into one zero-cost step; this module unfolds them
+# into their real 3 stages, verified lossless against 1.2e's historical
+# $-optimal figures exactly. ----
+
+
+def _1p2e_matching_base_supply():
+    supply = np.zeros(len(RESOURCE_NAMES))
+    supply[RESOURCE_NAMES.index("ori")] = 540.0
+    supply[RESOURCE_NAMES.index("ferr")] = 90.0
+    supply[RESOURCE_NAMES.index("cup_ore")] = 240.0
+    return supply
+
+
+def test_reproduces_1p2e_historical_dollar_figure_exactly():
+    """The core "no folded formulas, should match past results" check:
+    given the same base supply 1.2e's own historical $-optimal test uses
+    (ori=540, ferr=90, cup_ore=240, no Inergen/Xiragen), wuling_1p4's
+    fully-unfolded model must reproduce the exact same $1415.99...
+    (206735/146) figure -- not approximately, exactly, since every new
+    formula here is either a lossless pass-through or genuinely unused
+    at this base supply level.
+
+    This caught two real bugs before passing: (1) WulingConfig1p4 was
+    passing metatransfers=[] to the underlying 1.2e config, silently
+    making metatransfer_option_0 -- used at rate 1.0 in the real
+    historical solution -- permanently unavailable; (2) full_supply()
+    never credited metatransfer_allowance at all, so enabling
+    metatransfers alone wouldn't have been enough either. Also
+    surfaced that 1.2e's own sandleaf_plant limit (5) is too tight
+    once Sandleaf gets a new competing consumer (the Carbon chain) --
+    see DEFAULT_PLANTING_LIMIT's docstring."""
+    config = WulingConfig1p4(base_supply=_1p2e_matching_base_supply())
+    result, names = search(config)
+    assert result.status == "optimal"
+    assert result.dollar_output == pytest.approx(206735 / 146)
+
+
+def test_reproduces_1p2e_ban_ya_historical_figure():
+    """Second historical invariant, banning ya/jincao_tea (see
+    wuling.py's own test for why both must be banned together --
+    they're perfect economic substitutes)."""
+    config = WulingConfig1p4(
+        base_supply=_1p2e_matching_base_supply(),
+        formula_limits={"ya": 0.0, "jincao_tea": 0.0},
+    )
+    result, names = search(config)
+    assert result.status == "optimal"
+    assert result.dollar_output == pytest.approx(205129 / 146)
+
+
+def test_metatransfer_option_available_and_credited():
+    """Regression: WulingConfig1p4 used to pass metatransfers=[] to the
+    underlying 1.2e config, and full_supply() never credited
+    metatransfer_allowance either -- either bug alone silently made
+    metatransfer_option_0 permanently unusable."""
+    config = WulingConfig1p4()
+    formulas = build_formulas(config)
+    assert "metatransfer_option_0" in formulas
+    supply = full_supply(config)
+    assert supply[RESOURCE_NAMES.index("metatransfer_allowance")] >= 1.0
+
+
+def test_yazhen_and_jincao_are_fully_unfolded_not_collapsed():
+    """The old 1.2e formulas (yazhen_solution_make: {"yazhen_solution":
+    -30}, entirely free) must be gone, replaced by the real 3-stage
+    chain -- Planting (yazhen_plant), Shredding (yazhen_powder_make),
+    Reactor Crucible (yazhen_solution_make, redefined) -- each a
+    genuine Formula with the recipe's own resource, not a single
+    zero-cost step."""
+    formulas = build_formulas(WulingConfig1p4())
+    for prefix, raw, powder, solution in (
+        ("yazhen", "yazhen_raw", "yazhen_powder", "yazhen_solution"),
+        ("jincao", "jincao_raw", "jincao_powder", "jincao_solution"),
+    ):
+        plant = formulas[f"{prefix}_plant"]
+        powder_make = formulas[f"{prefix}_powder_make"]
+        solution_make = formulas[f"{prefix}_solution_make"]
+        assert plant.consumption[RESOURCE_NAMES.index(raw)] < 0
+        assert powder_make.consumption[RESOURCE_NAMES.index(raw)] > 0
+        assert powder_make.consumption[RESOURCE_NAMES.index(powder)] < 0
+        assert solution_make.consumption[RESOURCE_NAMES.index(powder)] > 0
+        assert solution_make.consumption[RESOURCE_NAMES.index(solution)] < 0
+        # the old folded formula produced Solution directly from
+        # nothing -- the redefined one must consume real Powder instead
+        assert not all(
+            amount == 0 or resource_name == solution
+            for resource_name, amount in zip(RESOURCE_NAMES, solution_make.consumption)
+        )
+
+
+def test_yazhen_jincao_unfolded_ratio_preserves_1p2e_batch_size():
+    """1.2e's folded yazhen_solution_make produced exactly 30 Yazhen
+    Solution per multiple; the unfolded 3-stage chain must still need
+    exactly 15 raw Yazhen to reach that same 30 Yazhen Solution (30
+    Yazhen Solution -> 30 Yazhen Powder [Reactor Crucible 1:1] -> 15
+    Yazhen [Shredding 1:2]), so this is a lossless reformulation, not
+    just a differently-shaped one."""
+    formulas = build_formulas(WulingConfig1p4())
+    for prefix, raw, powder, solution in (
+        ("yazhen", "yazhen_raw", "yazhen_powder", "yazhen_solution"),
+        ("jincao", "jincao_raw", "jincao_powder", "jincao_solution"),
+    ):
+        powder_make = formulas[f"{prefix}_powder_make"]
+        solution_make = formulas[f"{prefix}_solution_make"]
+        # multiples of solution_make needed for 30 Solution:
+        solution_multiples = (
+            30.0 / -solution_make.consumption[RESOURCE_NAMES.index(solution)]
+        )
+        powder_needed = (
+            solution_multiples * solution_make.consumption[RESOURCE_NAMES.index(powder)]
+        )
+        powder_multiples = (
+            powder_needed / -powder_make.consumption[RESOURCE_NAMES.index(powder)]
+        )
+        raw_needed = (
+            powder_multiples * powder_make.consumption[RESOURCE_NAMES.index(raw)]
+        )
+        assert raw_needed == pytest.approx(15.0)
+
+
+def test_carbon_chain_has_all_four_confirmed_sources():
+    """Buckflower and Sandleaf (30:30) and Jincao and Yazhen (30:60,
+    twice as efficient) must all be usable, competing Carbon sources --
+    per tmp_notes/old_prompt.md's "Refining Unit: 30 Buckflower OR 30
+    Sandleaf -> 30 Carbon" / "30 Jincao OR 30 Yazhen -> 60 Carbon"."""
+    formulas = build_formulas(WulingConfig1p4())
+    for formula_name, input_name, ratio in (
+        ("carbon_from_buckflower", "buckflower", 1.0),
+        ("carbon_from_sandleaf", "sandleaf_raw", 1.0),
+        ("carbon_from_jincao", "jincao_raw", 0.5),
+        ("carbon_from_yazhen", "yazhen_raw", 0.5),
+    ):
+        formula = formulas[formula_name]
+        input_amount = formula.consumption[RESOURCE_NAMES.index(input_name)]
+        carbon_amount = -formula.consumption[RESOURCE_NAMES.index("carbon")]
+        assert input_amount / carbon_amount == pytest.approx(ratio)
+
+
+def test_stabilized_carbon_chain_ratios_match_old_prompt():
+    """Carbon -> Carbon Powder (1:2), + Sandleaf Powder -> Dense Carbon
+    Powder (2:1, plus a real Sandleaf Powder co-input), -> Stabilized
+    Carbon (1:1) -- per tmp_notes/old_prompt.md."""
+    formulas = build_formulas(WulingConfig1p4())
+    carbon_powder_make = formulas["carbon_powder_make"]
+    assert carbon_powder_make.consumption[
+        RESOURCE_NAMES.index("carbon")
+    ] / -carbon_powder_make.consumption[
+        RESOURCE_NAMES.index("carbon_powder")
+    ] == pytest.approx(0.5)
+
+    dense = formulas["dense_carbon_powder_make"]
+    assert dense.consumption[
+        RESOURCE_NAMES.index("carbon_powder")
+    ] / -dense.consumption[
+        RESOURCE_NAMES.index("dense_carbon_powder")
+    ] == pytest.approx(2.0)
+    assert dense.consumption[RESOURCE_NAMES.index("sandleaf")] > 0.0
+
+    stabilized = formulas["stabilized_carbon_make"]
+    assert stabilized.consumption[
+        RESOURCE_NAMES.index("dense_carbon_powder")
+    ] / -stabilized.consumption[
+        RESOURCE_NAMES.index("stabilized_carbon")
+    ] == pytest.approx(1.0)

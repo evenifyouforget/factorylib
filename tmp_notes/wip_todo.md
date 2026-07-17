@@ -10,11 +10,12 @@ between sessions.
 - PR #13 ("Specialize for Endfield: Endfield-specific multi-goal
   solving, integer formulas, CLI") merged to `main` at `fe099a3`.
 - Current branch: `wuling-1p4`, for Endfield 1.4 content.
-- Repo state on this branch: 3113 tests passing, `ruff check`/`ruff
+- Repo state on this branch: 3125 tests passing, `ruff check`/`ruff
   format --check` clean.
-- **`src/factorylib/endfield/wuling_1p4.py` now exists** -- a first
-  complete draft of the 1.4 recipe/resource graph (see its own module
-  docstring for the full list of assumptions/gaps). Not yet wired into
+- **`src/factorylib/endfield/wuling_1p4.py` now exists** -- the 1.4
+  recipe/resource graph, now fully unfolded (no folded formulas -- see
+  "1.4 implementation status" below) and verified to reproduce 1.2e's
+  historical $-optimal figures exactly. Not yet wired into
   pp_goals/refine/cli -- see "1.4 remaining work" below.
 - Default CLI run (`python -m factorylib.endfield`, still 1.2e-only):
   - Optimal ($-only): $1415.99/min (129.9% of $1090 stock-bill goal)
@@ -365,6 +366,59 @@ even though they're already fixed):
   the since-removed placeholder Pyrrolite supply feeding
   pyrrolite_part_sell) back to a sane $1590.60.
 
+## Carbon/Stabilized Carbon supply chain + full unfolding (old_prompt.md)
+
+The user brought back the original pre-1.2e problem statement
+(`tmp_notes/old_prompt.md`), which turned out to have the real recipe
+chain feeding Carbon/Stabilized Carbon that no 1.4-specific note
+mentioned at all (1.2e never needed it since its Xiranite production
+was fully abstracted). Also confirmed: **only 5 materials get any base
+income at all** (Originium/Ferrium/Cuprium Ore, Inergen, Xiragen) --
+Carbon, Stabilized Carbon, and Pyrrolite must all be crafted. This
+initially looked like it would make Xiranite (and therefore almost the
+whole economy) unreachable, same as Pyrrolite -- but old_prompt.md
+supplied the missing chain:
+
+```
+Buckflower or Sandleaf -> Carbon (30:30)
+Jincao or Yazhen -> Carbon (30:60, twice as efficient)
+Carbon -> Carbon Powder (30:60)
+Carbon Powder + Sandleaf Powder -> Dense Carbon Powder (60+30:30)
+Dense Carbon Powder -> Stabilized Carbon (30:30)
+```
+
+**Confirmed with the user: model all 4 Carbon sources**, including
+Jincao/Yazhen -- which required fully unfolding 1.2e's
+`yazhen_solution_make`/`jincao_solution_make` (previously one zero-cost
+step collapsing Planting+Shredding+Reactor Crucible, since it was
+otherwise all-Water) into their real 3 stages, since raw Yazhen/Jincao
+is now a genuine competing resource. **Confirmed with the user: no
+folded formulas should remain anywhere, and the result must still
+match past results** -- now verified by a dedicated regression test
+(`test_reproduces_1p2e_historical_dollar_figure_exactly`) that
+reproduces 1.2e's exact historical $1415.99... (206735/146) figure
+given the same base supply, plus a second one for the ban-ya invariant
+(205129/146).
+
+**Two more real bugs found while getting that reproduction test to
+actually pass** (the unfolding alone wasn't the whole story):
+- `WulingConfig1p4._v1p2e_config()` was passing `metatransfers=[]` to
+  the underlying 1.2e config -- silently making `metatransfer_option_0`
+  (used at rate 1.0 in 1.2e's own historical $-optimal solution)
+  permanently unavailable. Now defaults to `wuling.DEFAULT_METATRANSFERS`.
+- `full_supply()` never credited `metatransfer_allowance` at all, so
+  enabling metatransfers alone wouldn't have been enough either --
+  fixed alongside the above.
+- Separately (not a bug, a genuine new constraint): 1.2e's own
+  `sandleaf_plant` limit (5, "sized to comfortably cover its tracked
+  consumers' floor demand") is too tight once Sandleaf/Sandleaf Powder
+  gets a brand-new competing consumer (`dense_carbon_powder_make`).
+  Empirically found 10 is the exact minimum needed to still reach
+  1.2e's historical figure; raised the default (`DEFAULT_PLANTING_LIMIT`,
+  now also shared by the new `buckflower_plant`/`yazhen_plant`/
+  `jincao_plant`) to 15 for a small margin, and `build_formulas`
+  overrides 1.2e's inherited `sandleaf_plant` to match.
+
 **Not yet done** (deliberately out of scope for this pass, per "most of
 the work is in the new recipes"):
 - No `pp_goals`/`refine`/`cli` wiring for 1.4 at all yet -- no
@@ -374,7 +428,8 @@ the work is in the new recipes"):
   Point at 0.5/min, Liquid Xiranite at 10/min), no CLI entry point, no
   `FORMULA_LABELS` dict (only `RESOURCE_LABELS` exists so far).
 - 6 "reverse" Fluid-Gas/Solid-Gas Transmuting Unit recipes not modeled
-  (rates never given).
+  (rates never given) -- also the only visible path to a Pyrrolite
+  source, still unresolved.
 - Threshold-activation inputs folded in as plain proportional
   consumption everywhere except Forge of the Sky/Gas Dispersing Unit/
   Gas Reactor Globe/Stable-ENV Purification variants (which use the

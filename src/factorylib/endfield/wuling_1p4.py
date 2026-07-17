@@ -5,23 +5,46 @@ tmp_notes/flexible_gear_crafting.md (repo-root-relative scratch notes,
 not part of the installed package).
 
 Every 1.2e formula/resource not explicitly changed by 1.4 is reused
-unchanged (Cuprium/Ferrium refining, Sandleaf, Yazhen/Jincao, SC/LC
-Wuling Battery, the four Gear Components, the five power routes, etc.)
--- this module only replaces Forge of the Sky (now real recipes instead
-of an abstracted allocation) and adds the new material chains on top.
+unchanged (Cuprium/Ferrium refining, Sandleaf, SC/LC Wuling Battery, the
+four Gear Components, the five power routes, etc.) -- this module only
+replaces Forge of the Sky (now real recipes instead of an abstracted
+allocation), unfolds Yazhen/Jincao into their real 3-stage recipes (see
+below), and adds the new material chains on top.
+
+Base supply (confirmed with the user): Originium Ore (540), Ferrium Ore
+(120 -- wuling.py's own DEFAULT_BASE_SUPPLY uses 90 for 1.2e; that's
+left untouched, 120 is specifically confirmed correct for 1.4), Cuprium
+Ore (420), Inergen (>=260), and Xiragen (30) are the ONLY materials
+with any base income at all, besides the virtual forge_budget
+allowance. Every other new material must be crafted -- see
+WulingConfig1p4's docstring for how Carbon/Stabilized Carbon's real
+supply chain is now modeled, and Pyrrolite's remaining gap.
+
+No folded formulas (confirmed with the user): 1.2e collapses Yazhen and
+Jincao's Planting+Shredding+Reactor Crucible chain into one zero-cost
+step each, since it's otherwise all-Water and there was no scarce
+resource whose flow that would hide. That's no longer true once the
+Carbon supply chain needs raw Yazhen/Jincao as an *alternative* use for
+the same material -- so both are unfolded here into their real 3
+stages (yazhen_plant/yazhen_powder_make/yazhen_solution_make and the
+Jincao equivalents), verified to still reproduce 1.2e's historical
+$-optimal figures exactly (see test_wuling_1p4.py).
 
 Known gaps / assumptions (flag before treating any of this as final):
-  - Where raw Carbon, Stabilized Carbon, and Pyrrolite themselves come
-    from is not given anywhere in the source notes -- modeled as new
-    base-supply resources (like Originium/Ferrium/Cuprium Ore) with a
-    large-but-finite (_PLACEHOLDER_SUPPLY) placeholder supply until real
-    numbers are confirmed (NOT math.inf: Pyrrolite feeds a real $/item
-    sell price, so an unconstrained supply of it makes the LP genuinely
-    unbounded -- caught by search() failing to reach "optimal" status
-    once that sell formula was added). See WulingConfig1p4's docstring.
+  - Pyrrolite has zero base supply (confirmed: it must be crafted, not
+    sourced directly) and no confirmed recipe produces it either -- see
+    WulingConfig1p4's docstring for the reverse-Transmuting-Unit-recipe
+    gap this leaves. Structurally unreachable, along with everything
+    downstream (Pyrrolite Part/Component, the T4 Crafting Point tier,
+    pyrrolite_part_sell) until that's resolved.
+  - Carbon/Stabilized Carbon: unlike Pyrrolite, this gap IS resolved --
+    see WulingConfig1p4's docstring and the "no folded formulas" note
+    above for the real 4-source supply chain (Buckflower, Sandleaf,
+    Jincao, Yazhen).
   - The 6 "reverse" Fluid-Gas/Solid-Gas Transmuting Unit recipes ("every
     Z seconds", rate never given) are NOT modeled -- only the 11 forward
-    recipes with concrete per-cycle numbers are.
+    recipes with concrete per-cycle numbers are. (This is also the only
+    visible path to a Pyrrolite source, per the gap above.)
   - Filling Unit is only modeled for the 2 gas variants new_goals.md and
     the exploration-items list actually reference (Inergen, Xiragen),
     not all 8 possible gases the recipe is generically described for.
@@ -47,10 +70,6 @@ Known gaps / assumptions (flag before treating any of this as final):
     below its max 30/min rate if Stabilized Carbon/Carbon supply is
     tight -- unlike 1.2e's old xiranite_forge_alloc, which had no real
     input to ever be short of.
-  - Ferrium Ore's "New Max Raw Material Income" is listed as "120/min
-    (unchanged)", but wuling.py's own DEFAULT_BASE_SUPPLY uses 90 --
-    flagged, not silently resolved either way (1.2e's default is
-    left alone; this module's own default uses the newly-confirmed 120).
   - Gas Dispersing Unit's own building count is unbounded here (no cap
     given, only the "13x13 fields can't overlap" spatial constraint,
     which -- like all physical topology/layout in this project -- isn't
@@ -73,9 +92,29 @@ from factorylib.optimize import Formula, OptimizeResult, maximize_dollar
 # unchanged -- see module docstring for how Forge of the Sky's mechanic
 # changes without renaming what it produces).
 _NEW_RESOURCE_NAMES = [
-    # New base/raw materials -- see module docstring's Carbon/Stabilized
-    # Carbon/Pyrrolite gap.
+    # Carbon/Stabilized Carbon supply chain (tmp_notes/old_prompt.md, the
+    # original pre-1.2e problem statement -- 1.2e never needed this
+    # chain since its Xiranite production was fully abstracted via
+    # forge_budget, bypassing real Carbon inputs entirely). All 4 real
+    # sources are modeled: Buckflower, Sandleaf (30:30), Jincao, Yazhen
+    # (30:60, twice as efficient). The Jincao/Yazhen route requires
+    # unfolding 1.2e's yazhen_solution_make/jincao_solution_make (which
+    # collapse Planting+Shredding+Reactor Crucible into one zero-cost
+    # step, since it's otherwise all-Water) back into their 3 real
+    # stages -- confirmed with the user: no folded formulas should
+    # remain, every original recipe gets modeled individually, verified
+    # to still reproduce 1.2e's historical $-optimal figures exactly
+    # (a lossless reformulation, same principle as origocrust_make/
+    # ferrium_make's existing unconstrained 1:1 pass-throughs -- see
+    # test_wuling_1p4.py's dedicated regression test for this).
+    "buckflower",
+    "yazhen_raw",
+    "yazhen_powder",
+    "jincao_raw",
+    "jincao_powder",
     "carbon",
+    "carbon_powder",
+    "dense_carbon_powder",
     "stabilized_carbon",
     "pyrrolite",
     "inergen",
@@ -128,7 +167,14 @@ RESOURCE_NAMES = v1p2e.RESOURCE_NAMES + _NEW_RESOURCE_NAMES
 
 RESOURCE_LABELS = {
     **v1p2e.RESOURCE_LABELS,
+    "buckflower": "Buckflower",
+    "yazhen_raw": "Yazhen",
+    "yazhen_powder": "Yazhen Powder",
+    "jincao_raw": "Jincao",
+    "jincao_powder": "Jincao Powder",
     "carbon": "Carbon",
+    "carbon_powder": "Carbon Powder",
+    "dense_carbon_powder": "Dense Carbon Powder",
     "stabilized_carbon": "Stabilized Carbon",
     "pyrrolite": "Pyrrolite",
     "inergen": "Inergen",
@@ -186,7 +232,14 @@ _GAS_NAMES = (
 RESOURCE_BELT_SPEED = {
     **v1p2e.RESOURCE_BELT_SPEED,
     **{name: 120.0 for name in _GAS_NAMES},
+    "buckflower": 30.0,
+    "yazhen_raw": 30.0,
+    "yazhen_powder": 30.0,
+    "jincao_raw": 30.0,
+    "jincao_powder": 30.0,
     "carbon": 30.0,
+    "carbon_powder": 30.0,
+    "dense_carbon_powder": 30.0,
     "stabilized_carbon": 30.0,
     "pyrrolite": 30.0,
     "cuprium_canister": 30.0,
@@ -233,35 +286,47 @@ def make_formula(
 # DEFAULT_BASE_SUPPLY (90) -- confirmed with the user this is correct
 # for 1.4 while 1.2e's own 90 stays untouched (not retroactively
 # "fixed", since that would invalidate its own historical tests).
-# Carbon/Stabilized Carbon have no source recipe or supply number given
-# at all (see module docstring) -- _PLACEHOLDER_SUPPLY stands in until
-# real numbers are confirmed. Deliberately finite, not math.inf: an
-# unconstrained supply feeding a real $/item sell price elsewhere would
-# make the $-maximizing LP genuinely unbounded (this already happened
-# once with Pyrrolite -- see below -- caught by search() returning a
-# non-optimal status once pyrrolite_part_sell was added).
 #
-# Pyrrolite deliberately has NO base supply at all (confirmed with the
-# user: it must be crafted, not sourced directly) -- but no confirmed
-# recipe produces raw Pyrrolite either. The only path visible in the
-# source notes is the *reverse* of "Solid-Gas Transmuting Unit: Xiragen
-# [threshold 6/min] + 1 Pyrrolite -> 1 Pyrrolite Gas" (i.e. turning
-# Pyrrolite Gas back into solid Pyrrolite), one of the 6 reverse
-# Transmuting Unit recipes this module deliberately doesn't model
-# because their rates were never given ("every Z seconds" placeholder).
-# Until that's confirmed, Pyrrolite -- and everything downstream of it
+# Confirmed with the user: these 5 (Originium/Ferrium/Cuprium Ore,
+# Inergen, Xiragen) are the ONLY materials with any base income at all
+# (besides the virtual forge_budget allowance) -- Carbon, Stabilized
+# Carbon, and Pyrrolite must all be crafted, never sourced directly.
+# Carbon/Stabilized Carbon's real supply chain (tmp_notes/old_prompt.md,
+# the original pre-1.2e problem statement) is now modeled below in
+# build_formulas: Buckflower or Sandleaf -> Carbon -> Carbon Powder ->
+# Dense Carbon Powder -> Stabilized Carbon. Pyrrolite still has no
+# confirmed recipe producing it at all (see module docstring) and
+# remains structurally unreachable, along with everything downstream
 # (Pyrrolite Part, Pyrrolite Component, the T4 Crafting Point tier,
-# pyrrolite_part_sell) -- is structurally unreachable in this model,
-# not just currently produced at rate 0. Flagged rather than guessed at
-# (e.g. mirroring the forward recipe's 1:1 ratio) since a wrong guess
-# here would propagate through Pyrrolite's entire downstream chain.
+# pyrrolite_part_sell) -- not papered over with a guessed reverse-recipe
+# ratio, since a wrong guess would propagate through its whole chain.
 DEFAULT_ORIGINIUM_ORE = 540.0
 DEFAULT_FERRIUM_ORE = 120.0
 DEFAULT_CUPRIUM_ORE = 420.0
 DEFAULT_INERGEN = 260.0  # "at least 260/min" per the data sheet
 DEFAULT_XIRAGEN = 30.0
 DEFAULT_MAX_FORGES = 12  # unchanged from 1.2e, confirmed with the user
-_PLACEHOLDER_SUPPLY = 10_000.0
+# Planting Unit output for Buckflower/Yazhen/Jincao (see build_formulas'
+# buckflower_plant/yazhen_plant/jincao_plant) has no real building-count
+# cap given, same situation 1.2e's own sandleaf_plant is in -- reuses
+# its exact rationale (see wuling.py's own comment on that formula), an
+# arbitrary stand-in, not a real game constraint. See also
+# tmp_notes/make_plants_not_free.md for a more principled alternative
+# (an increasing pp cost per additional multiple) meant for whenever
+# this gets a real pp_goals layer -- not implemented here since this
+# module doesn't have one yet.
+#
+# 15, not 1.2e's own 5: 1.2e's sandleaf_plant=5 was "sized to comfortably
+# cover its tracked consumers' floor demand" -- but that no longer holds
+# once Sandleaf/Sandleaf Powder gets a brand-new competing consumer
+# (the Carbon chain's dense_carbon_powder_make). Empirically, 10 is the
+# exact minimum needed to still reproduce 1.2e's historical $-optimal
+# figure exactly once Buckflower/Yazhen/Jincao/Sandleaf are all raised
+# together (see test_wuling_1p4.py's regression test); 15 keeps a small
+# margin rather than sitting right on that edge. build_formulas
+# overrides 1.2e's inherited sandleaf_plant to this same value for
+# consistency (it would otherwise stay stuck at 5).
+DEFAULT_PLANTING_LIMIT = 15
 
 
 def _default_base_supply() -> np.ndarray:
@@ -271,8 +336,6 @@ def _default_base_supply() -> np.ndarray:
     supply[RESOURCE_NAMES.index("cup_ore")] = DEFAULT_CUPRIUM_ORE
     supply[RESOURCE_NAMES.index("inergen")] = DEFAULT_INERGEN
     supply[RESOURCE_NAMES.index("xiragen")] = DEFAULT_XIRAGEN
-    supply[RESOURCE_NAMES.index("carbon")] = _PLACEHOLDER_SUPPLY
-    supply[RESOURCE_NAMES.index("stabilized_carbon")] = _PLACEHOLDER_SUPPLY
     return supply
 
 
@@ -286,15 +349,26 @@ class WulingConfig1p4:
             confirmed-vs-placeholder figures).
         max_forges: number of Forge of the Sky units, split (as an
             integer MILP choice) between 3 recipes -- see build_formulas.
-        purify_building/purify_node/secondary_goals/formula_limits/
-            formula_outputs: same meaning as wuling.WulingConfig (passed
-            straight through to the underlying 1.2e build_formulas()
-            call this module extends). Metatransfer is not modeled --
-            no 1.4-era equivalent has been given yet.
+        metatransfers/purify_building/purify_node/secondary_goals/
+            formula_limits/formula_outputs: same meaning as
+            wuling.WulingConfig (passed straight through to the
+            underlying 1.2e build_formulas() call this module extends).
+            metatransfers defaults to wuling.DEFAULT_METATRANSFERS --
+            nothing in the 1.4 source notes suggests this changed, and
+            an earlier draft of this module set it to `[]` instead,
+            which silently made metatransfer_option_0 -- used at rate
+            1.0 in 1.2e's own historical $-optimal solution -- entirely
+            unavailable. Caught by a regression test that reproduces
+            that historical figure exactly.
     """
 
     base_supply: np.ndarray = field(default_factory=_default_base_supply)
     max_forges: int = DEFAULT_MAX_FORGES
+    metatransfers: list[np.ndarray] = field(
+        default_factory=lambda: [
+            np.array(mt, dtype=float) for mt in v1p2e.DEFAULT_METATRANSFERS
+        ]
+    )
     purify_building: bool = True
     purify_node: bool = True
     secondary_goals: bool = True
@@ -308,12 +382,13 @@ class WulingConfig1p4:
                 f"base_supply must be length {len(RESOURCE_NAMES)}: "
                 + ", ".join(RESOURCE_NAMES)
             )
+        self.metatransfers = [np.asarray(mt, dtype=float) for mt in self.metatransfers]
 
     def _v1p2e_config(self) -> v1p2e.WulingConfig:
         return v1p2e.WulingConfig(
             base_supply=self.base_supply[: len(v1p2e.RESOURCE_NAMES)],
             max_forges=self.max_forges,
-            metatransfers=[],
+            metatransfers=self.metatransfers,
             purify_building=self.purify_building,
             purify_node=self.purify_node,
             secondary_goals=self.secondary_goals,
@@ -346,19 +421,92 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
             v1p2e.GOOD_YIELD["hetonite_component"],
         ),
     }
+    # yazhen_solution_make/jincao_solution_make are replaced below with
+    # their real 3-stage unfolding (Planting/Shredding/Reactor Crucible)
+    # -- see _NEW_RESOURCE_NAMES' comment on why (no folded formulas).
     for name, formula in base.items():
-        if name in ("xiranite_forge_alloc", "heavy_xiranite_forge_alloc"):
+        if name in (
+            "xiranite_forge_alloc",
+            "heavy_xiranite_forge_alloc",
+            "yazhen_solution_make",
+            "jincao_solution_make",
+        ):
             continue
         vec = _extend(formula.consumption)
         if name in _component_item_yield:
             item_name, yield_per_multiple = _component_item_yield[name]
             vec[RESOURCE_NAMES.index(item_name)] = -yield_per_multiple
+        # sandleaf_plant's inherited 1.2e limit (5) is raised to match
+        # DEFAULT_PLANTING_LIMIT -- see that constant's own docstring
+        # for why 1.4's new Carbon-chain demand on the same Sandleaf
+        # pool means 5 is no longer enough to reproduce 1.2e's
+        # historical $-optimal figure.
+        limit = (
+            float(DEFAULT_PLANTING_LIMIT) if name == "sandleaf_plant" else formula.limit
+        )
         f[name] = Formula(
             consumption=vec,
             output=formula.output,
-            limit=formula.limit,
+            limit=limit,
             integer=formula.integer,
         )
+
+    # ---- Yazhen/Jincao unfolded into their real 3 stages (Planting,
+    # Shredding, Reactor Crucible) instead of 1.2e's single folded
+    # zero-cost step, so the Carbon chain below has real Yazhen/Jincao
+    # to draw from. Ratios preserve 1.2e's exact "1 multiple = 30
+    # Solution" convention (30 Yazhen Solution needs 30 Yazhen Powder
+    # needs 15 Yazhen), so this is a lossless reformulation -- verified
+    # against 1.2e's historical $-optimal figures in
+    # test_wuling_1p4.py's dedicated regression test. Only the Planting
+    # stage is capped (mirrors sandleaf_plant/buckflower_plant); the
+    # unfolded Shredding/Reactor-Crucible stages stay uncapped like
+    # every other lossless "_make" pass-through in this model.
+    f["yazhen_plant"] = make_formula(
+        {"yazhen_raw": -60.0}, 0.0, limit=DEFAULT_PLANTING_LIMIT
+    )
+    f["yazhen_powder_make"] = make_formula(
+        {"yazhen_raw": 30.0, "yazhen_powder": -60.0}, 0.0
+    )
+    f["yazhen_solution_make"] = make_formula(
+        {"yazhen_powder": 30.0, "yazhen_solution": -30.0}, 0.0
+    )
+    f["jincao_plant"] = make_formula(
+        {"jincao_raw": -60.0}, 0.0, limit=DEFAULT_PLANTING_LIMIT
+    )
+    f["jincao_powder_make"] = make_formula(
+        {"jincao_raw": 30.0, "jincao_powder": -60.0}, 0.0
+    )
+    f["jincao_solution_make"] = make_formula(
+        {"jincao_powder": 30.0, "jincao_solution": -30.0}, 0.0
+    )
+
+    # ---- Carbon / Stabilized Carbon supply chain (tmp_notes/
+    # old_prompt.md) -- 4 alternative raw sources (Buckflower, Sandleaf,
+    # Jincao, Yazhen), all competing in the same $-maximizing LP with
+    # whatever else those raw materials could otherwise be used for
+    # (sandleaf_powder, the Syringe/Tea/Drink chains). Jincao/Yazhen are
+    # twice as efficient (30:60) as Buckflower/Sandleaf (30:30). ----
+    f["buckflower_plant"] = make_formula(
+        {"buckflower": -30.0}, 0.0, limit=DEFAULT_PLANTING_LIMIT
+    )
+    f["carbon_from_buckflower"] = make_formula(
+        {"buckflower": 30.0, "carbon": -30.0}, 0.0
+    )
+    f["carbon_from_sandleaf"] = make_formula(
+        {"sandleaf_raw": 30.0, "carbon": -30.0}, 0.0
+    )
+    f["carbon_from_jincao"] = make_formula({"jincao_raw": 30.0, "carbon": -60.0}, 0.0)
+    f["carbon_from_yazhen"] = make_formula({"yazhen_raw": 30.0, "carbon": -60.0}, 0.0)
+    f["carbon_powder_make"] = make_formula(
+        {"carbon": 30.0, "carbon_powder": -60.0}, 0.0
+    )
+    f["dense_carbon_powder_make"] = make_formula(
+        {"carbon_powder": 60.0, "sandleaf": 30.0, "dense_carbon_powder": -30.0}, 0.0
+    )
+    f["stabilized_carbon_make"] = make_formula(
+        {"dense_carbon_powder": 30.0, "stabilized_carbon": -30.0}, 0.0
+    )
 
     # ---- Forge of the Sky: 12 buildings, 3 competing recipes ----
     # (see module docstring for the two-layer capacity/run rationale)
@@ -628,11 +776,18 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
 
 
 def full_supply(config: WulingConfig1p4) -> np.ndarray:
-    """config.base_supply plus the fixed amount the Forge of the Sky
-    allocation formulas compete over (max_forges of forge_budget) --
-    same role as wuling.full_supply."""
+    """config.base_supply plus the fixed amounts the forge-allocation and
+    metatransfer-choice formulas compete over (max_forges of
+    forge_budget, and -- if any metatransfer options exist -- exactly 1
+    metatransfer_allowance) -- same role as wuling.full_supply. Missing
+    the metatransfer_allowance credit here was a real bug: it silently
+    made metatransfer_option_0 permanently unusable regardless of
+    whether WulingConfig1p4.metatransfers was populated, caught by a
+    regression test reproducing 1.2e's historical $-optimal figure."""
     supply = config.base_supply.copy()
     supply[RESOURCE_NAMES.index("forge_budget")] += config.max_forges
+    if config.metatransfers:
+        supply[RESOURCE_NAMES.index("metatransfer_allowance")] += 1.0
     return supply
 
 
