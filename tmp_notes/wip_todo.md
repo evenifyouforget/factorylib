@@ -10,8 +10,13 @@ between sessions.
 - PR #13 ("Specialize for Endfield: Endfield-specific multi-goal
   solving, integer formulas, CLI") merged to `main` at `fe099a3`.
 - Current branch: `wuling-1p4`, for Endfield 1.4 content.
-- Repo state on this branch: 3100 tests passing, `ruff check`/`ruff
-  format --check` clean. Default CLI run (`python -m factorylib.endfield`):
+- Repo state on this branch: 3113 tests passing, `ruff check`/`ruff
+  format --check` clean.
+- **`src/factorylib/endfield/wuling_1p4.py` now exists** -- a first
+  complete draft of the 1.4 recipe/resource graph (see its own module
+  docstring for the full list of assumptions/gaps). Not yet wired into
+  pp_goals/refine/cli -- see "1.4 remaining work" below.
+- Default CLI run (`python -m factorylib.endfield`, still 1.2e-only):
   - Optimal ($-only): $1415.99/min (129.9% of $1090 stock-bill goal)
   - Most-fit (refined): $1178.63/min (108.1%), Power 7700W (110.0%,
     hard cap), Delivery quota 184.0% of 2 jobs/day, Cuprium Component
@@ -277,10 +282,74 @@ historically have. Explicitly "yet to be done" experiments by the
 community, not something for us to model speculatively -- wait for
 confirmed mechanics before encoding anything here.
 
-## Open questions for the user (not yet asked)
-- Once 1.4 recipes are confirmed, do we want a clean `wuling_1p4.py`
-  (or a `config`-driven variant switch) alongside the existing 1.2e
-  scenario, or should 1.2e be retired/replaced outright? Given how much
-  of `wuling.py` is scenario-specific (RESOURCE_NAMES, RESOURCE_LABELS,
-  build_formulas), this is a real fork-vs-replace decision worth
-  raising before writing a lot of new formula code.
+## 1.4 implementation status (wuling_1p4.py)
+
+**Fork-vs-replace question above is resolved**: went with a clean fork
+-- `src/factorylib/endfield/wuling_1p4.py` reuses every unchanged 1.2e
+formula (via `wuling.build_formulas()` + zero-padding to the extended
+resource vector) and only replaces/adds what 1.4 actually changes. 1.2e
+itself is completely untouched. 93 formulas total, 13 tests in
+`tests/endfield/test_wuling_1p4.py`, all passing.
+
+**Built and validated**:
+- Forge of the Sky: 3-way integer allocation (12 total buildings,
+  shared `forge_budget` pool) across the plain Xiranite recipe (2
+  Stabilized Carbon), the Stable-ENV Xiranite recipe (1 Carbon,
+  confirmed cheaper), and Heavy Xiranite (reuses 1.2e's `hx_make`
+  unchanged -- its 60:30:6 ratio exactly matches the newly-confirmed
+  10:5:1 recipe scaled by 6, a nice cross-validation). `search()`
+  correctly prefers the Stable-ENV route and reproduces the *exact same*
+  10/2 forge split 1.2e's own $-optimal baseline finds.
+- Gas Dispersing Unit (4 environments, 6/min gas -> 4 allowance each,
+  integer).
+- All 11 forward-direction new recipes with concrete rates (Fitting/
+  Moulding/Gearing/Filling x2/Packaging/Purification x2 base + x2
+  Stable-ENV/Gas Reactor Globe/6 Fluid-Gas + 5 Solid-Gas Transmuting).
+- Crafting Point chain -- validated by test against every real per-tier
+  gear cost in kaneko_1p4_data_sheet.md (not just the earlier by-hand
+  check).
+- Two new sell formulas (`pyrrolite_part_sell` $70/item,
+  `separator_core_sell` $1/item) -- these are given $ prices directly in
+  the data sheet, not a tunable goal, so wired in now rather than
+  deferred.
+
+**Real bugs caught and fixed while writing this** (worth knowing about
+even though they're already fixed):
+- Two of the "self-referential" gas conversions (Solid-Gas Transmuting
+  Unit's Xiragen->Xiragen recipe, and the Liquid-Heavy-Xiranite->Heavy
+  Xiragen recipe) had the threshold-activation input be the *same*
+  resource as the recipe's own reactant/product -- an early draft either
+  forgot the production term entirely (solid_gas_xiragen) or miscounted
+  the batch ratio (fluid_gas_heavy_xiragen, a 5-item-per-cycle recipe
+  where per-unit normalization is error-prone). Both caught by hand
+  re-deriving from first principles before writing tests, not by the
+  tests themselves -- there wasn't an automated check that would have
+  caught either, which is itself worth noting as a coverage gap.
+- Giving Pyrrolite a `math.inf` placeholder supply made the LP
+  genuinely unbounded once `pyrrolite_part_sell` was added (infinite
+  Pyrrolite -> infinite $). Switched Carbon/Stabilized Carbon/Pyrrolite
+  to a large-but-finite placeholder (`_PLACEHOLDER_SUPPLY = 10_000.0`)
+  instead. This is *not* a real number and must be replaced once real
+  supply data exists -- it currently dominates the reported $ output
+  ($141590 for the default config, ~$140000 of which is just the
+  placeholder Pyrrolite feeding pyrrolite_part_sell).
+
+**Not yet done** (deliberately out of scope for this pass, per "most of
+the work is in the new recipes"):
+- No `pp_goals`/`refine`/`cli` wiring for 1.4 at all yet -- no
+  `PPGoals1p4`, no nonzero-goal tiers for the new_goals.md priority list
+  (Separator Core/Cuprium Canister variants at 0.1/min, Liquid Heavy
+  Xiranite/Cuprium Component/Hetonite Part/Pyrrolite Part/T1-T4 Crafting
+  Point at 0.5/min, Liquid Xiranite at 10/min), no CLI entry point, no
+  `FORMULA_LABELS` dict (only `RESOURCE_LABELS` exists so far).
+- 6 "reverse" Fluid-Gas/Solid-Gas Transmuting Unit recipes not modeled
+  (rates never given).
+- Threshold-activation inputs folded in as plain proportional
+  consumption everywhere except Forge of the Sky/Gas Dispersing Unit/
+  Gas Reactor Globe/Stable-ENV Purification variants (which use the
+  proper two-layer integer-allocation pattern) -- see the module
+  docstring's own note on why this is fine for LP-optimal purposes as
+  long as nothing caps those buildings' count, and revisit if a real
+  cap for any of them shows up.
+- Filling Unit only modeled for Inergen/Xiragen (the two variants
+  anything downstream actually needs).
