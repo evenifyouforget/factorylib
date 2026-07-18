@@ -17,15 +17,25 @@ between sessions.
   directions of every Fluid-Gas/Solid-Gas Transmuting Unit recipe
   modeled (closing Pyrrolite's last remaining gap), and verified to
   reproduce 1.2e's historical $-optimal figures exactly once the
-  purely-additive gas economy is isolated out. Not yet wired into
-  pp_goals/refine/cli -- see "1.4 remaining work" below.
-- Default CLI run (`python -m factorylib.endfield`, still 1.2e-only):
-  - Optimal ($-only): $1415.99/min (129.9% of $1090 stock-bill goal)
-  - Most-fit (refined): $1178.63/min (108.1%), Power 7700W (110.0%,
-    hard cap), Delivery quota 184.0% of 2 jobs/day, Cuprium Component
-    200%, Xiranite Component 20%, **Hetonite Component 0%** (see below)
-  - (numbers above reflect the power-curve retune and box-capacity fix
-    applied this session -- see "Applied this session" below)
+  purely-additive gas economy is isolated out.
+- **Now fully wired into pp_goals/refine/cli** -- `pp_goals_1p4.py`
+  (`PPGoals1p4`/`build_pp_formulas`/`pp_supply`), `refine.py`'s new
+  `refine_1p4()`, and `cli.py` (now defaults to 1.4 for both the
+  Optimal and Most-fit sections) all exist -- see "1.4 CLI wiring"
+  below for the full writeup.
+- Default CLI run (`python -m factorylib.endfield`, now 1.4 by
+  default):
+  - Optimal ($-only): $2171.10/min (199.2% of $1090 stock-bill goal),
+    literal two-layer integer threshold model (see "Threshold recipes"
+    above) -- $2183.95/min (200.4%) with `--continuous-thresholds`.
+  - Most-fit (refined): reaches the $1090 stock-bill target almost
+    exactly under default settings; Power/Delivery-quota/Gear-Component
+    lines all print correctly for 1.4's resource set (Pyrrolite
+    Component included, via its own `gearing_unit` formula).
+  - (1.2e's own historical figures, e.g. $1415.99/$1178.63, are no
+    longer what `python -m factorylib.endfield` prints by default --
+    those remain accurate for `wuling.py`/`pp_goals.py`/`refine.refine()`
+    directly, still covered by their own tests.)
 
 ## Applied this session (adjust_power_curve.md / clarification_delivery.md)
 
@@ -98,6 +108,24 @@ we want to close this out before 1.4 recipes land.
   steady-state LP doesn't model (see factorylib.endfield.goals and
   factorylib.search's module docstrings' repeated caveats about this).
   Real, but a harder fixed-point problem.
+- **Modularity requirement for a future SA-replacement PR** (per
+  `tmp_notes/future_work.md`): to let one future PR swap out simulated
+  annealing for a tuned alternative without touching the rest of the
+  pipeline, the search's own candidate-state representation needs `eq`,
+  `hash`, `get_fitness()`, and `get_random_new_mutant()`. **Not true
+  today**: `search.py`'s `simulated_annealing()` operates directly on a
+  plain `np.ndarray` of formula rates plus a list of `_move` functions
+  (`_round_down_move`/`_round_up_move`/`_allocate_slack_move`/
+  `_shift_move`/`_toggle_integer_move`/`_pinned_lp_move`) and a fitness
+  callback passed in from the caller (`refine.py`) -- there's no
+  dedicated state class at all, so eq/hash/mutate aren't meaningful yet.
+  Confirmed: no direction/gradient info is tracked (rules out gradient
+  descent) and there's no crossbreeding between two candidate states
+  (rules out a genetic algorithm) -- but most other metaheuristics
+  (tabu search, other annealing schedules, hill-climbing variants) would
+  still be possible once a real state class exists. Not attempted yet --
+  flagged here so a future PR doing this refactor knows the actual
+  current shape of `search.py`, not just the abstract ask.
 - **Old scratch files** (`factorylib_tmp_linearization.md`,
   `factorylib_tmp_linearization_notes.md`,
   `factorylib_tmp_physical_factory_construction.md`, the old MR draft)
@@ -427,17 +455,74 @@ the work is in the new recipes"):
   `PPGoals1p4`, no nonzero-goal tiers for the new_goals.md priority list
   (Separator Core/Cuprium Canister variants at 0.1/min, Liquid Heavy
   Xiranite/Cuprium Component/Hetonite Part/Pyrrolite Part/T1-T4 Crafting
-  Point at 0.5/min, Liquid Xiranite at 10/min), no CLI entry point, no
-  `FORMULA_LABELS` dict (only `RESOURCE_LABELS` exists so far).
-- Threshold-activation inputs folded in as plain proportional
-  consumption everywhere except Forge of the Sky/Gas Dispersing Unit/
-  Gas Reactor Globe/Stable-ENV Purification variants (which use the
-  proper two-layer integer-allocation pattern) -- see the module
-  docstring's own note on why this is fine for LP-optimal purposes as
-  long as nothing caps those buildings' count, and revisit if a real
-  cap for any of them shows up.
+  Point at 0.5/min, Liquid Xiranite at 10/min), no CLI entry point.
+  `FORMULA_LABELS` now exists (see below).
 - Filling Unit only modeled for Inergen/Xiragen (the two variants
   anything downstream actually needs).
+
+### FORMULA_LABELS added; complexity-pricing exclusion generalized
+- `wuling_1p4.FORMULA_LABELS` now exists, mirroring `wuling.py`'s own
+  (reuses every unchanged 1.2e label, overrides the two replaced Forge
+  of the Sky allocations, adds labels for every new formula).
+- `goals.py`'s `_plan_complexity` generalized to accept
+  `resource_names`/`resource_belt_speed`/`is_bookkeeping_formula` as
+  optional parameters (defaulting to 1.2e's exact original behavior,
+  verified by `test_goals.py`/`test_refine.py` staying green) --
+  prerequisite for reusing it against a 1.4 plan.
+- `wuling_1p4.is_forge_or_metatransfer_formula` added: now a generic
+  `name.endswith("_alloc")` check (plus the existing
+  `metatransfer_option_*` prefix) rather than a hand-maintained name
+  list, so every current and future "_alloc" bookkeeping formula
+  (Forge of the Sky, Gas Reactor Globe, Purification Stable-ENV
+  variants, and now every threshold recipe's own alloc -- see below) is
+  automatically excluded from `_plan_complexity`'s belt-fraction
+  pricing without needing this function edited in lockstep.
+
+### Threshold recipes: literal two-layer integer model (not just proportional folding)
+Per direct instruction: a partially-utilized building still pays its
+full fixed 6/min threshold cost in the real game
+(kaneko_1p4_data_sheet.md's science report: "6/min threshold
+activations aren't actually flow based... after receiving 1 item, the
+building is on for 10 seconds") -- an earlier draft's proportional
+folding (threshold cost scaled continuously with the recipe's own rate)
+was only an approximation, not confirmed equivalent. Confirmed via the
+data sheet that **only** Fluid-Gas Transmuting Unit (12 recipes),
+Solid-Gas Transmuting Unit (10 recipes), and Gas Dispersing Unit (4,
+already integer=True, untouched) carry an actual `[threshold 6/min]`
+tag -- Gas Reactor Globe and Purification Unit do NOT (their Xiragen/
+Cuprium Gas inputs are ordinary stoichiometric reactants, already
+correctly modeled via the existing ENV-gated alloc/run pattern).
+
+**Implemented**: `_THRESHOLD_RECIPES` (a `(name, threshold_good,
+max_rate, other_consumption)` table -- `max_rate` is 30 for every
+"every 2 seconds" recipe, 6 for the two "every 10 seconds" Heavy
+Xiragen batch recipes) + `_threshold_formulas()`, which builds either:
+- the literal model (default): `{name}_alloc` (integer, unconstrained
+  count, pays the fixed 6/min threshold cost per committed building,
+  mints `max_rate` units of `{name}_capacity`) + `{name}_run`
+  (continuous, consumes that capacity 1-for-1 with real throughput).
+- the old proportional-folding approximation
+  (`WulingConfig1p4.continuous_thresholds=True`): a single continuous
+  formula, algebraically identical to what this module had before this
+  change (verified: the whole 22-formula table was derived by hand
+  from the original formulas, not new data).
+
+**Confirmed empirically this is NOT just a modeling nicety -- it changes
+the $-optimal answer**: default config's $-optimal output is
+**$2171.10** with the literal integer model vs. **$2183.95** with the
+old proportional folding (**-0.59%**). Traced the cause: `fluid_gas_xiragen`
+needs 6 integer buildings to cover its needed throughput (180 units of
+capacity), but only uses 168 of them -- the 6th building's fixed Liquid
+Xiranite budget is partially wasted, something the old proportional
+model never charged (it always billed exactly 0.2 Liquid Xiranite per
+unit output, regardless of "whole building" granularity). This is a real,
+structural effect of the literal mechanic, not noise -- confirmed
+reproducible, not a solver artifact.
+
+**Still needed**: task #42 (CLI wiring to 1.4) must also add a
+`--continuous-thresholds` flag through to `WulingConfig1p4` for
+before/after comparison from the command line -- not done yet, since
+`cli.py` doesn't wire up `wuling_1p4` at all yet.
 
 ## Pyrrolite resolved: both directions of Transmuting Unit recipes
 
@@ -484,3 +569,374 @@ path the unconstrained $-optimal picks becomes a genuine economic
 choice each time (like which of two tied alternatives 1.2e's own search
 picks), not a fixed guarantee -- feasibility-under-incentive is the
 right invariant to test, not "the default config happens to pick it."
+
+## 1.4 CLI wiring: pp_goals_1p4.py, refine_1p4(), cli.py now defaults to 1.4
+
+Confirmed with the user: "Full" scope -- both the Optimal ($-only) and
+Most-fit (refined) sections of `python -m factorylib.endfield` now
+default to 1.4, not 1.2e. 1.2e itself (`wuling.py`/`pp_goals.py`/
+`refine.refine()`) is completely untouched and still fully tested on
+its own.
+
+**`src/factorylib/endfield/pp_goals_1p4.py`** (new file): mirrors
+`pp_goals.py`'s structure, reusing its generic tier generators
+(`satisfaction_tiers`/`nonzero_production_tiers`/`hard_satisfaction_bonus`)
+unchanged. `PPGoals1p4` adds new_goals.md's full priority list as
+Nonzero Production Goals (Low/Mid/High priority just means a bigger
+`first_cap`: 0.1/0.5/10.0) -- Separator Core, both Cuprium Canister
+filled variants, Liquid Heavy Xiranite, Pyrrolite Part, and the whole
+T1-T4 Crafting Point chain collapsed into ONE goal keyed on
+`t1_crafting_point` alone (every tier cascades down to T1 for free, so
+rewarding only the bottom of the cascade is sufficient -- matches
+new_goals.md's own single-line framing). Raises Cuprium Component's and
+Hetonite Part's `first_cap` to 0.5 (Xiranite Component's stays 0.1,
+per new_goals.md not listing it). **Resolved the open design question**
+from the previous session: Xiranite/Cuprium/Hetonite Component's own
+Nonzero Production tiers key DIRECTLY on their real
+`xiranite_component_item`/`cuprium_component_item`/
+`hetonite_component_item` resources (now real in 1.4, unlike 1.2e)
+instead of needing a redundant per-component `*_flow` dimension the way
+1.2e's `pp_goals.py` did -- only the AGGREGATE "any component nonzero"
+goal still needs `component_flow`, since no single real resource means
+"any of these five". Pyrrolite Component (`gearing_unit`) needed no
+such fix either -- it was already a real resource from the start.
+**Real bug found and fixed while building this**:
+`xiranite_component_item`/`cuprium_component_item`/
+`hetonite_component_item` had no `RESOURCE_BELT_SPEED` entry in
+`wuling_1p4.py` at all, silently making them invisible to delivery-quota
+candidates and depot-accumulation tracking (both require
+`belt_speed == 30.0` to recognize a "real solid item") -- fixed by
+adding all three at 30.0, matching every other named Component/Part.
+14 tests in `tests/endfield/test_pp_goals_1p4.py`, all passing.
+
+**`src/factorylib/endfield/refine.py`**: added `refine_1p4()` alongside
+the existing `refine()` (a new parallel function, not a generalization
+of `refine()` itself, to keep zero risk to its own tests). Takes
+`(base_result, base_formula_names)` instead of one `SearchResult`,
+since `wuling_1p4.search()` returns a plain `(OptimizeResult,
+list[str])` tuple (no z/metatransfer scalar bookkeeping -- every
+discrete choice is an ordinary named formula rate in 1.4). Uses the
+now-generalized `goals._plan_complexity` with 1.4's own
+`RESOURCE_NAMES`/`RESOURCE_BELT_SPEED` and a bookkeeping predicate
+combining `wuling_1p4.is_forge_or_metatransfer_formula` +
+`pp_goals.is_pp_bookkeeping_formula`. 5 tests in
+`tests/endfield/test_refine_1p4.py`, all passing.
+
+**`src/factorylib/endfield/wuling_1p4.py`**: also added `GOOD_YIELD`
+(extends 1.2e's with `pyrrolite_part_sell`/`separator_core_sell`/the
+new continuous-recipe formulas), `POWER_YIELD`/`METATRANSFER_ITEMS`
+(reused unchanged, no new power routes or metatransfer options in 1.4),
+`SELL_PRIORITY` (1.2e's order + the two new sellable goods appended),
+`SECONDARY_GOAL_FORMULA_NAMES`/`SECONDARY_PLUMBING_FORMULA_NAMES`
+(reused unchanged -- incomplete for 1.4's own new zero-$ intermediates,
+noted as a known gap, not a correctness bug). **Real bug found and
+fixed**: `WulingConfig1p4._v1p2e_config()` truncated `base_supply` to
+1.2e's shorter length before delegating, but NOT `metatransfers` --
+passing a full 1.4-length `--metatransfer` vector (as the CLI's own
+help text tells you to) crashed with a numpy shape-mismatch inside
+`v1p2e.build_formulas()`. Fixed by truncating metatransfers the same
+way. Caught by `test_main_explicit_purify_building_and_metatransfer_flags`.
+
+**`src/factorylib/endfield/delivery.py`**: generalized
+`accumulation_rates()` the same way `goals._plan_complexity` was
+generalized last session -- `resource_names`/`resource_belt_speed`/
+`resource_labels`/`good_yield`/`formula_labels`/`stashable_good_formulas`
+are now optional keyword parameters, defaulting to 1.2e's own (so
+existing callers/tests are unaffected). 1.4-specific note: unlike 1.2e
+(where all four Gear Components are pure dead ends), only
+`ferrium_component` has no real consumer in 1.4 -- Xiranite/Cuprium/
+Hetonite Component now feed the Crafting Point chain, so their surplus
+correctly comes through `resource_slack` instead (now that they have a
+`RESOURCE_BELT_SPEED` entry, see above), matching how `sandleaf_powder`
+was already fixed once *it* gained a real consumer.
+
+**`src/factorylib/endfield/cli.py`**: now imports `wuling_1p4`/
+`pp_goals_1p4`/`refine_1p4` by default (aliased to the same names the
+file already used, e.g. `WulingConfig1p4 as WulingConfig`) instead of
+1.2e's `wuling`/`pp_goals`/`refine`. Added `--continuous-thresholds`
+(store_true) wired to `WulingConfig1p4.continuous_thresholds`. Removed
+`_format_forge_allocation` (1.2e's `z` scalar doesn't exist in 1.4 --
+Forge of the Sky's 3-way allocation already shows via the ordinary
+per-formula listing, using its own `FORMULA_LABELS` entry) but kept
+`_format_metatransfer`, now driven by scanning each `metatransfer_option_i`
+formula's own rate (since there's no single scalar to key off either) --
+a bare `metatransfer_option_0` name in the formula listing wasn't
+informative enough on its own to drop this. Added `gearing_unit`
+(Pyrrolite Component) to the Gear-Component summary block, with a
+`_GEAR_DISPLAY_NAMES` override so it doesn't show its full verbose
+recipe description in that terse context.
+
+**`tests/endfield/test_cli.py`**: 13 pre-existing tests were hardcoded
+to 1.2e-only assumptions (its own historical $ figures, the `z=`/
+metatransfer print format, 40-length `--base-supply`/`--metatransfer`
+vectors, `fake_refine` mocks matching the old `refine()` signature).
+All updated to 1.4's own real, empirically-verified numbers/behavior --
+notably, 1.4's default scenario has its OWN genuine Forge-of-the-Sky
+allocation tie (a 3-plain/9-Stable-ENV split and an all-Stable-ENV 12/0
+split are economically identical), which replaced the old ya/jincao_tea
+substitution tie test (that substitution still exists in 1.4, but
+neither `ya` nor `jincao_tea` specifically happen to be part of the
+$-optimal baseline any more -- `yc`/`jincao_drink` cover that tiny
+sliver instead, so banning all four Yazhen/Jincao-family sell formulas
+together, not just two, is needed to see any $ change). One test
+(`test_main_no_ties_when_jincao_substitute_is_banned`) was removed
+outright -- its premise (an isolated no-tie scenario once the zero-$
+secondary-goal degeneracy is excluded) doesn't hold in 1.4's much larger
+economy, which has other genuine ties (the forge split above) that
+persist regardless of which sell formulas are banned; the underlying
+exclusion code (`_tie_detection_exclude`, `SECONDARY_GOAL_FORMULA_NAMES`/
+`SECONDARY_PLUMBING_FORMULA_NAMES`) is untouched by this session's
+changes, so the regression risk it guarded against is unchanged.
+
+**Verification**: full suite (3136 tests) passing, `ruff check`/`ruff
+format --check` clean, `python -m factorylib.endfield` (both with and
+without `--continuous-thresholds`) run end-to-end and manually inspected
+-- Optimal/Most-fit/Power/Delivery-quota/Gear-Component/Delivery-job-
+prediction/Diagram sections all print sensibly for 1.4.
+
+**Not done in this pass** (flagged, not forgotten):
+- `--continuous-thresholds` only affects `WulingConfig1p4` -- no
+  dedicated CLI test exercises the flag itself yet (manually verified
+  it runs and changes the reported $ figure as expected).
+- `SECONDARY_GOAL_FORMULA_NAMES`/`SECONDARY_PLUMBING_FORMULA_NAMES`
+  still don't cover any of 1.4's own new zero-$ intermediates (Cuprium
+  Canister, Separator Core, the Crafting Point chain, etc.) -- only
+  affects which "tied alternatives" get surfaced/suppressed, not
+  correctness.
+- No Graphviz diagram layout changes for 1.4's much larger formula set
+  -- `generate_diagram` is fully generic (parameterized by
+  resource/formula names+labels), so it works, but hasn't been visually
+  inspected for legibility at 1.4's scale (this environment has no
+  `dot` binary installed to render an actual image with).
+
+## Virtual power/Water/Acid $ tax (WulingConfig1p4.power_dollar_tax)
+
+Confirmed with the user: the raw $-maximizing `search()` has no concept
+of power at all, so it was genuinely indifferent between wasteful and
+efficient recipe choices that only differ in power/Carbon/Water/Acid
+usage (e.g. Forge of the Sky's Carbon-sourcing split -- see "Two-layer
+integer model" section above). Fixed via a real (if deliberately
+partial) $ tax: every formula in `wuling_1p4.FORMULA_WATTS` (Planting
+Units' direct power draw, plus every OTHER formula's implicit Water/Acid
+draw per old_prompt.md's Fluid Pump ratios: 5W/60Water, 10W/60Acid) gets
+a small negative `Formula.output`, converted from Watts via SC Wuling
+Battery's own real $/W exchange rate (`$54/item ÷ (3200W/1.5 items) =
+81/3200 $/W`, not an arbitrary epsilon). `search()` backs the tax back
+out of the reported `dollar_output` (`power_dollar_tax_paid()`) before
+returning, and `cli.py`'s tied-alternatives section does the same --
+confirmed with the user the tax's own $ amount has no real-world meaning
+(it's a deliberately incomplete power model), only its RELATIVE effect
+on the solver's vertex choice matters. Defaults to True;
+`--no-power-dollar-tax`/`power_dollar_tax=False` restores the old
+indifferent behavior (used by historical-reproduction tests and by
+`test_main_prints_discrete_branch_ties`/`test_main_prints_alternatives_
+section_when_tied`, which specifically re-exercise the tie the tax now
+resolves).
+
+**Real engineering wrinkle, resolved**: `Formula.output` can't be
+negative at CONSTRUCTION time (`factorylib.optimize.Formula.__post_init__`
+raises), but direct attribute MUTATION after construction bypasses that
+check entirely (confirmed: `f.output = -5.0` after `Formula(...)`
+succeeds) -- exactly the same "last write wins" pattern
+`config.formula_limits`/`formula_outputs` already use. This avoided
+touching `factorylib.optimize.py`'s own tested invariant at all. An
+earlier draft tried routing everything through a synthetic
+`raw_dollar`/`dollar_conversion` resource+formula instead -- fully
+reverted once this simpler mutation approach was found; it was causing
+real bugs (leaked into `refine_1p4`'s initial search state, oversubscribing
+a zero-supply resource; polluted the CLI's income breakdown with a huge
+fake "sold good"; triggered a genuine HiGHS numerical-scaling "unbounded"
+misdetection when combined with `formula_outputs={"pyrrolite_part_sell":
+1e9}` in a reachability test).
+
+Also drives `pp_goals_1p4.py`'s own (separate, always-on, NOT gated by
+`power_dollar_tax`) `power_flow` consumption for the same `FORMULA_WATTS`
+formulas -- confirmed with the user: "adding more planting units
+increases the [effective 7000W] power goal" should be real and visible
+in the refined "Most fit" section's own Power accounting, independent of
+whether the raw-$-layer tie-break tax is enabled.
+
+## `_threshold_formulas` simplified: one formula-name set, not two
+
+Earlier design: `continuous=True` returned a single bare-name formula,
+`continuous=False` (default) returned `{name}_alloc`/`{name}_run` --
+meaning the formula-NAME SET itself depended on
+`WulingConfig1p4.continuous_thresholds`, forcing every caller that needed
+one of these 22 formulas by name (the power tax, `pp_goals_1p4`'s
+power_flow loop, `power_dollar_tax_paid`) to guess which variant existed
+via `name if name in f else f"{name}_run"`. Simplified per the user's
+suggestion: ALWAYS build the `{name}_alloc`/`{name}_run` pair; `continuous`
+just toggles `{name}_alloc`'s `integer` flag (True=default, real building
+count; False=continuous "fractional buildings", mathematically exact
+reproduction of the old proportional-folding approximation, verified:
+same $2183.9459 continuous-mode figure as before the refactor). Removes
+all three `actual_name = ...` workarounds entirely. `_THRESHOLD_RECIPES`
+also now auto-derives all 11 reverse recipes from the 11 forward ones
+(`_reverse_threshold_recipe`: sign-flip every entry in
+`other_consumption`, verified against all 11 real reverse recipes
+including both self-referential ones) instead of hand-duplicating 22
+tuples -- removes the transcription-mismatch risk entirely, per the
+user's own suggestion.
+
+## Real bug found and fixed: Delivery quota vs. Delivery job prediction contradiction
+
+User-reported: "Delivery quota: 210% of 2 jobs/day goal" (with several
+materials listed as contributing) directly contradicted "Delivery job
+prediction ... (nothing accumulates unconsumed in the depot)" immediately
+below it. Root cause, confirmed empirically: `pp_goals_1p4`'s
+`delivery_quota_from_X`/every Nonzero-Production-Goal `pp_*` tier formula
+(`is_pp_bookkeeping_formula`-matched) scores a plan by literally
+CONSUMING the real resource in the LP (e.g. `delivery_quota_from_
+yazhen_powder` draws `box_capacity/1440` yazhen_powder/min directly) --
+correct for scoring purposes, but it means that consumption is already
+baked into `resource_slack`, so a material fully "spent" satisfying its
+own pp tier shows zero slack even though nothing physical actually
+consumed it (confirmed: `yazhen_powder`/`jincao_powder`/`carbon`/
+`carbon_powder` all showed exactly 0.0 slack despite each contributing
+"1 quota"). `cli.py`'s "Delivery job prediction" section was feeding
+`accumulation_rates()` this SAME (already-reduced) slack, hiding those
+materials from the depot simulator entirely. Fixed: `cli.py` now computes
+a separate `delivery_display_slack` excluding every
+`is_pp_bookkeeping_formula`-matched formula's own consumption, used only
+for `accumulation_rates()` -- confirmed empirically this recovers the
+true surplus (yazhen_powder/jincao_powder/carbon/carbon_powder all show
+exactly 8.33/min = 1 box's worth once excluded; hetonite_part shows
+0.5/min matching its own pp tier). The "Warning: this solution fully
+saturates X" headroom check and the material-balance display correctly
+keep using the ORIGINAL (unfiltered) slack, since those ARE about the
+LP's real resource balance from the solver's own perspective.
+
+## FORMULA_LABELS rewritten: real building name + explicit /min quantities
+
+User-reported: labels like "Yazhen Planting (→ Yazhen)", "Cuprium Ore
+Refining (Cuprium Ore → Cuprium + Sewage)", "Ferrium Bottle Moulding
+(Ferrium → Ferrium Bottle)" hid both which real building runs a recipe
+and how much of anything it actually needs. Rewrote essentially every
+production-formula label in `wuling_1p4.FORMULA_LABELS` (both the
+1.2e-inherited ones, overridden here -- `wuling.py`'s own labels stay
+untouched -- and every 1.4-specific one) to the format `"{Building}:
+{qty}/min {item} [+ ...] → {qty}/min {item} [+ ...]"`, e.g. "Moulding
+Unit: 60/min Ferrium → 30/min Ferrium Bottle". Every quantity verified
+against each formula's own `make_formula()` call in source (not retyped
+from memory), including `FORMULA_WATTS`' implicit Water/Acid quantities
+and `_THRESHOLD_RECIPES`' `[threshold 6/min]` tags. Left `_sell`
+formulas ("X (sellable)") and the Crafting Point chain (no real
+in-game building backs those conversions) in their simpler existing
+style. `v1p2e.FORMULA_LABELS` is still spread in first as a fallback
+safety net for anything not explicitly overridden.
+
+Also extended `_GEAR_DISPLAY_NAMES` (cli.py) to cover all 5 Gear
+Component formula names (previously only `gearing_unit`) -- the terse
+per-line Gear Component summary loop started printing full verbose
+recipe descriptions once FORMULA_LABELS grew long, this override table
+keeps that specific display terse.
+
+## BOM/recipe-listing deduplication + Material Balance multiples annotation
+
+User-reported: with the Income breakdown section now showing full
+per-sell-formula detail (amount, % produced, % goal, sold vs.
+accumulating), the plain per-formula recipe listing directly above it
+was repeating the exact same sell formulas with strictly less detail
+(just a bare rate). Fixed: `_format_result()` now computes
+`dollar_contribution_names` (via the existing `_dollar_contributions()`
+helper, shared with the income breakdown itself) and skips those names
+in the main listing loop -- but ONLY when the income breakdown is
+actually shown (`formulas is not None and stock_bill_cap is not None`);
+"Tied alternatives" calls (`formulas=None`) are unaffected, since there's
+no breakdown there to be redundant against and they still need to show
+which goods differ between tied alternatives.
+
+Separately, user asked why a line like "+120/min from Refining Unit:
+30/min Ferrium Ore → 30/min Ferrium" wasn't confusing against the
+label's own "30/min" figure -- it was, since the label states the
+per-multiple ratio but the balance line shows the aggregate flow with no
+multiples count to bridge them. Fixed: `_format_material_balance()`'s
+source/sink tuples now carry the formula's own `rate` as a third element
+(`None` for the base-supply line, which has no formula/rate behind it),
+appended as `" (N = N.NNNN multiples)"` on every formula-backed line.
+
+Regression tests added in `tests/endfield/test_cli.py`:
+`test_main_material_balance_lines_show_formula_multiples`,
+`test_main_recipe_listing_does_not_duplicate_income_breakdown_entries`.
+
+## Flagged, NOT yet fixed: sc_sell "net: 0/min" vs. allocate_by_priority "accumulating $" inconsistency
+
+User noticed the SC Wuling Battery example prints BOTH "net: 0/min" in
+Material Balance (the LP's `sc_sell` formula fully consumes every
+battery produced -- nothing physically left over, by the LP's own
+resource-balance accounting) AND "accumulating: 796.5 $/min" in the
+Income breakdown (implying real unsold, physically-piling-up batteries).
+Root cause, confirmed by reading `factorylib/priority_sell.py` in full:
+`allocate_by_priority()` is a PURE post-hoc, display-only greedy
+allocator over each sell formula's already-computed $ contribution --
+it has no connection to the LP's own resource balance at all, and its
+own module docstring's framing ("whatever doesn't fit in the budget
+simply accumulates unsold") directly implies real leftover inventory
+that Material Balance's "net: 0" denies exists for that same good. This
+"accumulating" $ figure also gets converted back into an item rate and
+fed into the delivery-job simulator (`cli.py`'s `refined_unsold` loop),
+so it's not just a cosmetic double-narrative -- it currently makes
+"unsold" SC Wuling Batteries eligible to be selected as delivery-job
+cargo, which arguably shouldn't be possible if the batteries were
+genuinely fully consumed making room for `sc_sell`'s own rate.
+
+**Deliberately not fixed** -- this was surfaced as a discovery/
+explanation in response to a direct question, not a request to change
+behavior, and per "at least flag suspicious changes" this is being
+recorded rather than silently patched. Needs a decision on the intended
+semantics before touching it: either (a) `sc_sell`-style formulas should
+never be treated as "fully consuming" their input if some of their own
+$ output can't actually be sold yet (i.e. genuinely throttle the LP's
+own `sc_sell` rate down to what `stock_bill_cap` can absorb, making
+Material Balance and the income breakdown agree that leftover batteries
+exist), or (b) the "accumulating" framing itself is wrong and should be
+reworded to something like "produced-but-not-yet-billed $" without
+implying physical inventory, and should NOT feed the delivery-job
+simulator as a real material candidate.
+
+## Regression tests added (2026-07-18/19 session, per "start adding tests now")
+
+Per explicit instruction ("if you're done with the 1.4 scenario, you
+should start adding tests now to catch regressions, or at least flag
+suspicious changes"), added dedicated coverage for every mechanism
+introduced/changed this session that had none before:
+
+`tests/endfield/test_wuling_1p4.py` (+7 tests):
+- `test_power_dollar_tax_resolves_forge_split_tie_deterministically` /
+  `test_power_dollar_tax_disabled_restores_old_tie` /
+  `test_power_dollar_tax_never_changes_the_true_optimal_dollar_value` --
+  the tax's whole reason to exist (breaking the Forge-of-the-Sky tie)
+  and its core invariant (never altering the reported `dollar_output`)
+  are both now regression-guarded.
+- `test_power_dollar_tax_paid_matches_manual_computation` /
+  `test_power_dollar_tax_paid_zero_for_no_rates` -- direct arithmetic
+  check on `power_dollar_tax_paid()`, independent of any LP solve.
+- `test_formula_watts_formulas_get_negative_output_when_tax_enabled` --
+  confirms the actual `Formula.output` mutation mechanism (the
+  post-construction-mutation loophole) fires for every `FORMULA_WATTS`
+  entry, resolving to `{name}_run` for threshold recipes.
+- `test_continuous_thresholds_does_not_change_formula_names` /
+  `test_continuous_thresholds_toggles_alloc_integer_flag_only` --
+  guards the core invariant of the `_threshold_formulas` simplification
+  (formula-name set never depends on `continuous_thresholds`, only
+  `.integer` does).
+- `test_threshold_recipes_reverse_derivation_matches_hand_verified_values`
+  -- spot-checks `_reverse_threshold_recipe`'s sign-flip against the
+  hand-verified values for a plain recipe, a batch recipe, and both
+  self-referential recipes (fluid_gas_xiragen/solid_gas_xiragen), so a
+  future sign-flip bug in the auto-derivation can't slip in silently.
+
+`tests/endfield/test_cli.py` (+3 tests):
+- `test_main_delivery_quota_contributors_are_not_hidden_from_delivery_job_prediction`
+  -- reproduces the exact scenario the user originally reported
+  (materials fully committed to their own delivery-quota bookkeeping
+  formula used to vanish from "Delivery job prediction" entirely) and
+  confirms every material listed under "Delivery quota" now also
+  appears as a real delivery-job candidate.
+- `test_main_material_balance_lines_show_formula_multiples` /
+  `test_main_recipe_listing_does_not_duplicate_income_breakdown_entries`
+  -- cover the BOM dedup and Material Balance multiples annotation
+  described above.
+
+Full suite (3146+ tests) passing, `ruff check`/`ruff format --check`
+clean after these additions.

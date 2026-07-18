@@ -1,0 +1,8 @@
+- [ ] Use sub-agent to look for strings, comments, etc which do not make sense in the current final version and possibly need git history or working context to understand
+- [ ] Use sub-agent to look for strings, comments, etc which refer to files that don't exist, tmp/notes files that will be deleted in the final version, or conversation context
+- [ ] Use sub-agent to look for strings, comments, etc which are inconsistent with other code or possibly outdated
+- [ ] Use sub-agent to look for strings, comments, etc which are confusing or misleading
+- [ ] Use sub-agent to look for strings, comments, etc which are too long
+- [ ] Use sub-agent to quality check code for code repetition, error-prone patterns, potential to simplify, or anything that is difficult to reason about
+- [ ] Address above issues so the state after merging the PR will be clean
+- [ ] Run CLI once `python3 -m factorylib.endfield` and verify the max $ solution and max fitness solution make sense according to the original prompts
