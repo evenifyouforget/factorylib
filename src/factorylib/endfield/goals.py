@@ -48,6 +48,7 @@ below nominal belt capacity) -- those aren't modeled here at all.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -168,28 +169,49 @@ def plan_from_search_result(
     )
 
 
-def _plan_complexity(plan: ProductionPlan, max_denom: int) -> float:
+def _plan_complexity(
+    plan: ProductionPlan,
+    max_denom: int,
+    *,
+    resource_names: Sequence[str] = RESOURCE_NAMES,
+    resource_belt_speed: dict[str, float] = RESOURCE_BELT_SPEED,
+    is_bookkeeping_formula: Callable[[str], bool] | None = None,
+) -> float:
     """Total complexity penalty for a plan: for each formula with a known
     consumption vector, price every nonzero resource flow it induces as a
     belt/pipe-fraction (see module docstring); formulas with no known
     consumption vector fall back to pricing their raw rate directly.
+
+    resource_names/resource_belt_speed/is_bookkeeping_formula default to
+    1.2e's own (wuling.py's RESOURCE_NAMES/RESOURCE_BELT_SPEED, and
+    wuling.is_forge_or_metatransfer_formula combined with
+    pp_goals.is_pp_bookkeeping_formula) -- pass 1.4-scenario equivalents
+    (e.g. wuling_1p4.RESOURCE_NAMES/RESOURCE_BELT_SPEED and a predicate
+    covering wuling_1p4's own forge-allocation formula names) for a 1.4
+    plan instead. A consumption vector longer than resource_names (e.g.
+    one extended to pp_goals' FLOW_NAMES) is handled correctly: zip()
+    stops at the shorter resource_names, which is exactly right since
+    flow dimensions aren't real physical belts to price at all.
     """
+    if is_bookkeeping_formula is None:
+
+        def is_bookkeeping_formula(name: str) -> bool:
+            return is_forge_or_metatransfer_formula(name) or is_pp_bookkeeping_formula(
+                name
+            )
+
     total = 0.0
     for name, rate in plan.multiples.items():
-        if (
-            abs(rate) < 1e-9
-            or is_forge_or_metatransfer_formula(name)
-            or is_pp_bookkeeping_formula(name)
-        ):
+        if abs(rate) < 1e-9 or is_bookkeeping_formula(name):
             continue
         consumption = plan.consumption.get(name)
         if consumption is None:
             total += fraction_complexity(rate, max_denom)
             continue
-        for resource_name, coeff in zip(RESOURCE_NAMES, consumption):
+        for resource_name, coeff in zip(resource_names, consumption):
             if abs(coeff) < 1e-12:
                 continue
-            belt_speed = RESOURCE_BELT_SPEED.get(resource_name)
+            belt_speed = resource_belt_speed.get(resource_name)
             if not belt_speed:
                 total += fraction_complexity(rate * coeff, max_denom)
                 continue

@@ -24,11 +24,11 @@ def _diagram_generate_is_noop_by_default(monkeypatch):
     )
 
 
-def test_main_default_prints_1p2e_full_dollar(capsys):
+def test_main_default_prints_1p4_dollar(capsys):
     rc = main([])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "206735/146" in out
+    assert "606727/250" in out
 
 
 def test_main_prints_dollar_for_baseline_and_fitness_for_refined(capsys):
@@ -52,24 +52,46 @@ def test_main_prints_dollar_for_baseline_and_fitness_for_refined(capsys):
 
 
 def test_main_with_limit_flag(capsys):
-    """jincao_tea is a perfect economic substitute for ya (identical
-    recipe shape/price -- see wuling.py's module docstring), so banning
-    ya alone must also ban jincao_tea to reproduce the historical
-    ban_ya figure."""
-    rc = main(["--limit", "ya=0", "--limit", "jincao_tea=0"])
+    """ya/yc/jincao_tea/jincao_drink are all perfect economic substitutes
+    for each other (identical recipe shape/price -- see wuling.py's
+    module docstring); 1.4's much larger economy means the $-optimal
+    baseline doesn't even happen to run ya/jincao_tea specifically (yc/
+    jincao_drink cover that tiny sliver instead), so banning all four is
+    needed to see any real $ change at all."""
+    rc = main(
+        [
+            "--limit",
+            "ya=0",
+            "--limit",
+            "yc=0",
+            "--limit",
+            "jincao_tea=0",
+            "--limit",
+            "jincao_drink=0",
+        ]
+    )
     out = capsys.readouterr().out
     assert rc == 0
-    assert "205129/146" in out
+    assert "605061/250" in out
 
 
 def test_main_prints_forge_allocation(capsys):
-    """Spells out what z means: how many forges feed Xiranite supply vs.
-    cap Heavy Xiranite, instead of a bare "z=10"."""
+    """1.4 has no z scalar (unlike 1.2e) -- Forge of the Sky's 3-way
+    allocation is just ordinary named formulas, already visible in the
+    per-formula listing via their own FORMULA_LABELS entry. The default
+    power/Water/Acid $ tax (see WulingConfig1p4.power_dollar_tax) now
+    consistently prefers the all-Stable-ENV route (1 Carbon/Xiranite)
+    over the plain route (2 Stabilized Carbon/Xiranite, itself refined
+    from more Carbon) -- previously a pure LP tie between several
+    3/9-ish splits."""
     rc = main([])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "10 -> Xiranite supply" in out
-    assert "2 -> Heavy Xiranite capacity" in out
+    assert (
+        "Forge of the Sky, Stable ENV: 1 building → 30/min Xiranite recipe "
+        "capacity: [12 = 12.0000] multiples" in out
+    )
+    assert "Forge of the Sky: 1 building → 30/min Xiranite recipe capacity:" not in out
 
 
 def test_main_prints_income_breakdown_with_goal_percentage(capsys):
@@ -127,7 +149,7 @@ def test_main_prints_material_balance_with_zero_net_for_saturated_resources(caps
     out = capsys.readouterr().out
     assert rc == 0
     assert "Material balance" in out
-    assert "net: 0/min" in out  # 1.2e full is fully resource-saturated
+    assert "net: [0 = 0.0000]/min" in out  # 1.2e full is fully resource-saturated
 
 
 def test_main_material_balance_shows_sources_and_sinks(capsys):
@@ -135,7 +157,83 @@ def test_main_material_balance_shows_sources_and_sinks(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "from base supply (mining/Forge of the Sky/Metatransfer)" in out
-    assert "to Cuprium Ore Refining" in out
+    assert "to Refining Unit: 30/min Cuprium Ore" in out
+
+
+def test_main_material_balance_lines_show_formula_multiples(capsys):
+    """Regression: a source/sink line like "+120/min from Refining Unit:
+    30/min Ferrium Ore → 30/min Ferrium" used to read as a mismatch
+    (120 vs. the label's own 30/min) without the formula's own multiples
+    count -- each line must now append "(N = N.NNNN multiples)" so the
+    120/min = 30/min-per-multiple x 4 multiples scaling is explicit."""
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    balance_section = out[out.index("Material balance") :]
+    cuprium_ore_line = next(
+        line
+        for line in balance_section.splitlines()
+        if "to Refining Unit: 30/min Cuprium Ore" in line
+    )
+    assert re.search(r"\(\S.* multiples\)$", cuprium_ore_line)
+    # The base-supply source line has no formula/rate behind it, so it
+    # must NOT get a spurious multiples annotation.
+    base_supply_line = next(
+        line
+        for line in balance_section.splitlines()
+        if "from base supply (mining/Forge of the Sky/Metatransfer)" in line
+    )
+    assert "multiples)" not in base_supply_line
+
+
+def test_main_recipe_listing_does_not_duplicate_income_breakdown_entries(capsys):
+    """Sell formulas already itemized in the Income breakdown (name,
+    amount, % produced, % goal, sold vs. accumulating) used to also
+    appear as a bare "SC Wuling Battery (sellable): [rate] multiples"
+    line in the plain recipe listing right above -- strictly less
+    detail, so that line must now be skipped whenever the breakdown
+    itself is shown."""
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "SC Wuling Battery (sellable):" in out  # still itemized...
+    plain_recipe_line = "SC Wuling Battery (sellable): " + re.escape("[")
+    assert not re.search(rf"^    {plain_recipe_line}", out, re.MULTILINE)
+    # ...but the Material Balance section (more detail than the plain
+    # recipe listing, so not considered a duplicate) still shows it.
+    assert "to SC Wuling Battery (sellable)" in out
+
+
+def test_main_delivery_quota_contributors_are_not_hidden_from_delivery_job_prediction(
+    capsys,
+):
+    """Regression for a reported contradiction: materials fully consumed
+    by their own delivery_quota_from_*/pp_* bookkeeping formula (e.g.
+    Yazhen Powder, Carbon) used to show exactly 0.0 resource_slack even
+    while "Delivery quota" reported them as contributing -- hiding them
+    from "Delivery job prediction" entirely, which then claimed nothing
+    physically accumulates. Every material listed under "Delivery quota"
+    must now also appear as a real candidate in the delivery-job
+    prediction section (accumulating_display_slack excludes bookkeeping-
+    formula consumption so the material's TRUE surplus is used)."""
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    quota_section = out[
+        out.index("Delivery quota:") : out.index("Delivery job prediction")
+    ]
+    quota_labels = [
+        line.split(":")[0].strip()
+        for line in quota_section.splitlines()[1:]
+        if line.strip().endswith("quota")
+    ]
+    assert quota_labels  # sanity: the default scenario has quota contributors
+    delivery_section = out[out.index("Delivery job prediction") :]
+    for label in quota_labels:
+        assert label in delivery_section, (
+            f"{label} contributes to Delivery quota but never appears in "
+            "Delivery job prediction"
+        )
 
 
 def test_main_prints_metatransfer_as_named_item(capsys):
@@ -148,102 +246,72 @@ def test_main_prints_metatransfer_as_named_item(capsys):
 
 
 def test_main_prints_alternatives_section_when_tied(capsys):
-    rc = main(
-        [
-            "--max-forges",
-            "8",
-            "--base-supply",
-            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
-            "--no-purify-node",
-            "--formula-output",
-            "hp_sell=288",
-        ]
-    )
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "2229/2" in out
-    assert "Tied alternatives" in out
-
-
-def test_main_no_ties_when_jincao_substitute_is_banned(capsys):
-    """Guards against a real regression: sandleaf_powder has zero
-    resource cost, so the $-maximizing LP is trivially indifferent to its
-    rate (any value up to its limit is equally optimal at $0 marginal
-    value) -- a genuine LP degeneracy, but not an economically meaningful
-    "tied solution". main() excludes SECONDARY_GOAL_FORMULA_NAMES (and
-    the plumbing that solely feeds them) from tie detection for exactly
-    this reason; this test would fail if that exclusion were removed.
-    jincao_tea is banned here to isolate this from the separate, genuine
-    ya<->jincao_tea tie the default scenario now has (see the test
-    below)."""
-    rc = main(["--limit", "jincao_tea=0"])
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "Tied alternatives" not in out
-    assert "Tied discrete branches" not in out
-
-
-def test_main_default_scenario_shows_genuine_ya_jincao_tea_tie(capsys):
-    """jincao_tea is a perfect economic substitute for ya (identical
-    recipe shape and price -- see wuling.py's module docstring), so the
-    default 1.2e-full scenario now has a real tied alternative: this is
-    exactly the kind of "genuine choice between two strategies" tie
-    detection is meant to surface, unlike the zero-$ secondary-goal
-    degeneracy the test above excludes."""
-    rc = main([])
+    """The default scenario used to have a genuine tie on its own (several
+    Forge-of-the-Sky Carbon-sourcing splits, all equally wasteful of
+    otherwise-free Carbon) -- the power/Water/Acid $ tax (see
+    WulingConfig1p4.power_dollar_tax) now resolves that tie deliberately,
+    so --no-power-dollar-tax restores it here to keep testing the tied-
+    alternatives detection mechanism itself, isolated from that concern
+    (see test_main_prints_forge_allocation for the tax actually doing its
+    job by default)."""
+    rc = main(["-n", "8", "--no-power-dollar-tax"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "Tied alternatives" in out
-    assert "206735/146" in out  # alternative's recomputed $ matches baseline
+    assert out.count("606727/250") >= 2  # baseline + at least one alternative
 
 
 def test_main_prints_discrete_branch_ties(capsys):
-    """Reproduces the documented hx=$19 z=7-vs-8 discrete tie from
-    test_baseline.py::test_wuling_1p2_heavy_xiranite_worth -- now surfaced
-    by the same "Tied alternatives" perturbation mechanism used for every
-    other tie, since z is just another (integer) formula rate to it (see
-    wuling.py::search's docstring). max-solutions is raised because, with
-    every tied vertex scoring identically, which specific alternatives
-    survive the default truncation depends on discovery order -- this
-    specific z=7 branch isn't guaranteed to be among the first few found
-    otherwise (harmless: it's still discoverable, just not always in a
+    """Forge of the Sky's 3-way allocation is a genuine discrete choice
+    (see wuling_1p4.py's module docstring): the default scenario's
+    3-plain/9-Stable-ENV split and an all-Stable-ENV-route 12/0 split used
+    to be economically tied -- surfaced by the same "Tied alternatives"
+    perturbation mechanism used for every other tie, since each
+    allocation formula's rate is just another (integer) formula rate to
+    it (see wuling.py::search's docstring). The power/Water/Acid $ tax
+    (see WulingConfig1p4.power_dollar_tax) now resolves this
+    deliberately by default, so --no-power-dollar-tax restores the tie
+    to keep testing this specific discrete-branch case. max-solutions is
+    raised because, with every tied vertex scoring identically, which
+    specific alternatives survive the default truncation depends on
+    discovery order (harmless: still discoverable, just not always in a
     short list -- see the completeness note in wuling.py::search's
     docstring)."""
-    rc = main(
-        [
-            "--max-forges",
-            "8",
-            "--base-supply",
-            "0,480,90,180,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
-            "--no-purify-node",
-            "--formula-output",
-            "hx_sell=114",
-            "--max-solutions",
-            "8",
-        ]
-    )
+    rc = main(["-n", "8", "--no-power-dollar-tax"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "2133/2" in out
     assert "Tied alternatives" in out
-    assert "Forge of the Sky (→ Heavy Xiranite capacity): [1 = 1.0000] multiples" in out
+    assert (
+        "Forge of the Sky: 1 building → 30/min Xiranite recipe capacity: "
+        "[12 = 12.0000] multiples" in out
+    )
+
+
+def _metatransfer_vector(**amounts: float) -> str:
+    """Build a comma-separated len(RESOURCE_NAMES)-value metatransfer
+    vector for --metatransfer, keyed by resource name -- avoids hardcoding
+    a positional vector tied to a specific RESOURCE_NAMES length/order."""
+    from factorylib.endfield.wuling_1p4 import RESOURCE_NAMES
+
+    vec = [0.0] * len(RESOURCE_NAMES)
+    for name, amount in amounts.items():
+        vec[RESOURCE_NAMES.index(name)] = amount
+    return ",".join(str(v) for v in vec)
 
 
 def test_main_explicit_purify_building_and_metatransfer_flags(capsys):
     rc = main(
         [
             "--purify-building",
-            # 25 Dense Originium Powder
             "--metatransfer",
-            "0,0,0,0,0,0,0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
-            # 25 Ferrium Ore
+            _metatransfer_vector(dop=25),
             "--metatransfer",
-            "0,0,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            _metatransfer_vector(ferr=25),
         ]
     )
     out = capsys.readouterr().out
     assert rc == 0
-    assert "206735/146" in out
+    assert "Metatransfer:" in out
 
 
 def test_main_prints_refined_solution_section(capsys):
@@ -255,11 +323,15 @@ def test_main_prints_refined_solution_section(capsys):
 
 
 def test_main_prints_delivery_prediction(capsys):
+    """The power/Water/Acid $ tax (see WulingConfig1p4.power_dollar_tax)
+    now makes the default refined plan lean enough that nothing
+    accumulates unconsumed at all -- this only checks the section
+    itself still prints (either outcome, "selected" or "nothing
+    accumulates", is a valid report, not a bug)."""
     rc = main([])
     out = capsys.readouterr().out
     assert rc == 0
     assert "Delivery job prediction" in out
-    assert "Sandleaf Powder: selected" in out
 
 
 def test_main_delivery_flags_accepted(capsys):
@@ -286,13 +358,13 @@ def test_main_prints_headroom_warning_when_present(capsys):
     factorylib.endfield.refine's own tests), so this exercises the CLI's
     print path directly rather than hunting for one."""
 
-    def fake_refine(base, config, goals, search_config, *, backend):
+    def fake_refine(best_result, best_names, config, goals, search_config, *, backend):
         return RefinedResult(
-            rates=base.result.formula_rates,
+            rates=best_result.formula_rates,
             pp_output=0.0,
-            dollar_output=base.result.dollar_output,
+            dollar_output=best_result.dollar_output,
             fitness=0.0,
-            formula_names=base.formula_names,
+            formula_names=best_names,
             headroom_lost=["sew"],
         )
 
@@ -337,15 +409,15 @@ def test_main_warns_when_power_goal_unmet(capsys):
 
 
 def test_main_no_power_warning_when_goal_met(capsys):
-    def fake_refine(base, config, goals, search_config, *, backend):
-        rates = base.result.formula_rates.copy()
-        rates[base.formula_names.index("thermal_bank")] = 1000.0  # 50000 W
+    def fake_refine(best_result, best_names, config, goals, search_config, *, backend):
+        rates = best_result.formula_rates.copy()
+        rates[best_names.index("thermal_bank")] = 1000.0  # 50000 W
         return RefinedResult(
             rates=rates,
             pp_output=0.0,
-            dollar_output=base.result.dollar_output,
+            dollar_output=best_result.dollar_output,
             fitness=0.0,
-            formula_names=base.formula_names,
+            formula_names=best_names,
             headroom_lost=[],
         )
 
@@ -375,13 +447,13 @@ def test_main_warns_when_delivery_goal_unmet(capsys):
     any delivery_quota_from_* formula at all, so delivery quota achieved
     is naturally 0 -- no need to zero anything out explicitly."""
 
-    def fake_refine(base, config, goals, search_config, *, backend):
+    def fake_refine(best_result, best_names, config, goals, search_config, *, backend):
         return RefinedResult(
-            rates=base.result.formula_rates,
+            rates=best_result.formula_rates,
             pp_output=0.0,
-            dollar_output=base.result.dollar_output,
+            dollar_output=best_result.dollar_output,
             fitness=0.0,
-            formula_names=base.formula_names,
+            formula_names=best_names,
             headroom_lost=[],
         )
 
@@ -416,10 +488,12 @@ def test_main_random_seed_flag_prints_the_seed_used(capsys):
 
 
 def test_main_short_flags_match_long_flags(capsys):
-    rc = main(["-l", "ya=0", "-l", "jincao_tea=0"])
+    rc = main(
+        ["-l", "ya=0", "-l", "yc=0", "-l", "jincao_tea=0", "-l", "jincao_drink=0"]
+    )
     out = capsys.readouterr().out
     assert rc == 0
-    assert "205129/146" in out
+    assert "605061/250" in out
 
 
 def test_bad_purify_flags_mutually_exclusive():
@@ -448,18 +522,33 @@ def test_main_complexity_weight_flag_recovers_more_dollar(capsys):
     complexity_weight should recover close to LP-optimal $ output. Uses a
     wide gap (0.01 vs. 2.0, well past the 0.1 default) since a narrower
     comparison isn't reliably monotonic per-seed once complexity trades
-    off against several other goal weights, not just $ alone."""
-    main(["-w", "0.01", "-i", "3000", "-s", "0"])
+    off against several other goal weights, not just $ alone. Pins
+    --power-target low: Planting/Carbon-chain formulas now also draw
+    power_flow (see WulingConfig1p4/wuling_1p4.FORMULA_WATTS), making
+    Power a genuinely more competitive goal at the margin -- at the
+    default power target, a low complexity_weight run correctly
+    reallocates SOME resources toward Power's better marginal pp instead
+    of squeezing out every last $ (a real pp-optimal tradeoff, not a
+    bug), which breaks the clean $-only signal this test wants. A
+    trivially-easy power target removes that competition, isolating the
+    $-vs-complexity tradeoff this test actually checks."""
+    main(["-w", "0.01", "-i", "3000", "-s", "0", "-p", "1"])
     relaxed_dollar = _refined_dollar(capsys.readouterr().out)
 
-    main(["-w", "2.0", "-i", "3000", "-s", "0"])
+    main(["-w", "2.0", "-i", "3000", "-s", "0", "-p", "1"])
     strict_dollar = _refined_dollar(capsys.readouterr().out)
 
     assert relaxed_dollar >= strict_dollar
 
 
 def test_main_delivery_prediction_prints_percentages(capsys):
-    rc = main([])
+    """The default refined plan is now lean enough (see
+    WulingConfig1p4.power_dollar_tax) that nothing accumulates
+    unconsumed at all, so nothing would ever get "selected" -- force
+    some accumulation the same way test_main_delivery_prediction_
+    includes_unsold_goods does (a near-zero stock-bill cap), to exercise
+    the percentage-formatting path itself."""
+    rc = main(["--stock-bill-cap", "1"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "selected" in out

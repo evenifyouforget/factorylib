@@ -45,15 +45,19 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from factorylib.endfield import pp_goals_1p4 as pg4
+from factorylib.endfield import wuling_1p4 as v1p4
 from factorylib.endfield.goals import ProductionPlan, _plan_complexity
 from factorylib.endfield.pp_goals import (
     ALL_NAMES,
     DOLLAR_EARNER_OUTPUTS,
     PPGoals,
     build_pp_formulas,
+    is_pp_bookkeeping_formula,
     pp_supply,
 )
 from factorylib.endfield.wuling import SearchResult, WulingConfig
+from factorylib.optimize import OptimizeResult
 from factorylib.search import SearchConfig, search
 
 
@@ -143,4 +147,82 @@ def refine(
         fitness=outcome.fitness,
         formula_names=formula_names,
         headroom_lost=[ALL_NAMES[k] for k in outcome.headroom_lost],
+    )
+
+
+def _is_1p4_bookkeeping_formula(name: str) -> bool:
+    return v1p4.is_forge_or_metatransfer_formula(name) or is_pp_bookkeeping_formula(
+        name
+    )
+
+
+def refine_1p4(
+    base_result: OptimizeResult,
+    base_formula_names: list[str],
+    wuling_config: v1p4.WulingConfig1p4,
+    pp_goals: pg4.PPGoals1p4,
+    search_config: SearchConfig | None = None,
+    *,
+    backend: str = "sa",
+) -> RefinedResult:
+    """1.4 equivalent of refine(): same fitness function (pp_output minus
+    a complexity-weighted fraction-simplicity penalty), wired to
+    wuling_1p4/pp_goals_1p4 instead of 1.2e's wuling/pp_goals. A separate
+    function rather than generalizing refine() itself, to avoid any risk
+    to refine()'s own tests -- see tmp_notes/wip_todo.md.
+
+    base_result/base_formula_names come from wuling_1p4.search(), which
+    returns a plain (OptimizeResult, list[str]) tuple rather than 1.2e's
+    SearchResult wrapper (1.4 has no z/metatransfer scalar bookkeeping to
+    surface specially -- every discrete choice is an ordinary named
+    formula rate, see wuling_1p4.search's own docstring), hence the two
+    separate parameters instead of one SearchResult.
+    """
+    pp_formulas_dict = pg4.build_pp_formulas(wuling_config, pp_goals)
+    formula_names = list(pp_formulas_dict.keys())
+    formulas = [pp_formulas_dict[name] for name in formula_names]
+    pp_outputs = np.array([f.output for f in formulas], dtype=float)
+    dollar_outputs = np.array(
+        [pg4.DOLLAR_EARNER_OUTPUTS.get(name, 0.0) for name in formula_names],
+        dtype=float,
+    )
+    supply = pg4.pp_supply(wuling_config)
+    consumption_by_name = {name: f.consumption for name, f in pp_formulas_dict.items()}
+
+    base_rates_by_name = dict(zip(base_formula_names, base_result.formula_rates))
+    initial_rates = np.array(
+        [base_rates_by_name.get(name, 0.0) for name in formula_names], dtype=float
+    )
+
+    def fitness_fn(rates: np.ndarray) -> float:
+        pp = float(rates @ pp_outputs)
+        plan = ProductionPlan(
+            dollar_rate=0.0,
+            multiples=dict(zip(formula_names, rates)),
+            consumption=consumption_by_name,
+        )
+        complexity = _plan_complexity(
+            plan,
+            pp_goals.max_denom,
+            resource_names=v1p4.RESOURCE_NAMES,
+            resource_belt_speed=v1p4.RESOURCE_BELT_SPEED,
+            is_bookkeeping_formula=_is_1p4_bookkeeping_formula,
+        )
+        return pp - pp_goals.complexity_weight * complexity
+
+    outcome = search(
+        supply,
+        formulas,
+        initial_rates,
+        fitness_fn,
+        search_config,
+        backend=backend,
+    )
+    return RefinedResult(
+        rates=outcome.rates,
+        pp_output=float(outcome.rates @ pp_outputs),
+        dollar_output=float(outcome.rates @ dollar_outputs),
+        fitness=outcome.fitness,
+        formula_names=formula_names,
+        headroom_lost=[pg4.ALL_NAMES[k] for k in outcome.headroom_lost],
     )

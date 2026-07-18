@@ -14,32 +14,47 @@ from factorylib.delivery import DeliverySimConfig, simulate_delivery_selections
 from factorylib.endfield.delivery import accumulation_rates
 from factorylib.endfield.diagram import generate_diagram
 from factorylib.endfield.goals import item_rates
-from factorylib.endfield.pp_goals import (
-    PPGoals,
+from factorylib.endfield.pp_goals_1p4 import (
+    PPGoals1p4 as PPGoals,
+)
+from factorylib.endfield.pp_goals_1p4 import (
     build_pp_formulas,
     is_pp_bookkeeping_formula,
     pp_supply,
 )
-from factorylib.endfield.refine import refine
-from factorylib.endfield.wuling import (
+from factorylib.endfield.refine import refine_1p4 as refine
+from factorylib.endfield.wuling_1p4 import (
     FORMULA_LABELS,
     GOOD_YIELD,
     METATRANSFER_ITEMS,
     POWER_YIELD,
+    RESOURCE_BELT_SPEED,
     RESOURCE_LABELS,
     RESOURCE_NAMES,
     SECONDARY_GOAL_FORMULA_NAMES,
     SECONDARY_PLUMBING_FORMULA_NAMES,
     SELL_PRIORITY,
-    WulingConfig,
     build_formulas,
     full_supply,
+    power_dollar_tax_paid,
     search,
+)
+from factorylib.endfield.wuling_1p4 import (
+    WulingConfig1p4 as WulingConfig,
 )
 from factorylib.fractions import snap_value
 from factorylib.optimize import OptimizeResult
 from factorylib.priority_sell import allocate_by_priority
 from factorylib.search import SearchConfig
+
+# Formulas producing a stashable Gear Component good with genuinely NO
+# consumer in the 1.4 model (unlike 1.2e, where all four are dead ends --
+# see factorylib.endfield.delivery's module docstring): Xiranite/Cuprium/
+# Hetonite Component now feed the Crafting Point chain via their own real
+# xiranite_component_item/etc. resource, so their surplus comes through
+# resource_slack instead (see wuling_1p4.RESOURCE_BELT_SPEED). Only
+# Ferrium Component has no Crafting Point tier in 1.4's scheme.
+_1P4_STASHABLE_GOOD_FORMULAS = ("ferrium_component",)
 
 # Gear Components have no real "100%" target in the pp system (a Nonzero
 # Production Goal -- see pp_goals.nonzero_production_tiers): this is
@@ -95,10 +110,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help=f"comma-separated {len(RESOURCE_NAMES)}-value resource supply ("
         + ", ".join(RESOURCE_NAMES)
-        + "); default: 1.2e base",
+        + "); default: 1.4 base",
     )
     parser.add_argument(
-        "-f", "--max-forges", type=int, default=None, help="default: 12 (1.2e)"
+        "-f", "--max-forges", type=int, default=None, help="default: 12"
     )
     parser.add_argument(
         "-m",
@@ -109,6 +124,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
         dest="metatransfer",
         help=f"comma-separated {len(RESOURCE_NAMES)}-value metatransfer top-up; "
         "repeatable; default: the two standard metatransfers",
+    )
+    parser.add_argument(
+        "--continuous-thresholds",
+        action="store_true",
+        help="model every [threshold 6/min] Fluid-Gas/Solid-Gas Transmuting Unit "
+        "recipe as the old proportional-folding approximation instead of the "
+        "default literal two-layer integer model (see "
+        "factorylib.endfield.wuling_1p4's module docstring) -- useful for "
+        "an apples-to-apples before/after comparison",
+    )
+    parser.add_argument(
+        "--no-power-dollar-tax",
+        action="store_true",
+        help="disable the virtual power/Water/Acid $ tax that guides the "
+        "$-optimal search toward power/Carbon-efficient recipes among "
+        "otherwise-tied choices (see factorylib.endfield.wuling_1p4's "
+        "WulingConfig1p4.power_dollar_tax) -- the reported $/min is always "
+        "the real, untaxed figure either way, so this only affects which "
+        "tied vertex gets chosen, not what's shown",
     )
 
     # No short flags on these four: they're store_true/store_false pairs
@@ -225,9 +259,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "-B",
         "--delivery-box-capacity",
         type=float,
-        default=14000.0,
+        default=12000.0,
         help="items removed from the selected material per delivery job "
-        "(default: 14000)",
+        "(default: 12000)",
     )
     parser.add_argument(
         "-j",
@@ -295,6 +329,16 @@ def _fmt_pair(x: float) -> str:
     return f"[{_fmt(x)} = {x:.4f}]"
 
 
+def _bullet(depth: int, text: str) -> str:
+    """Markdown list item at nesting level `depth` (0 = top-level) -- the
+    CLI's report is plain Markdown throughout (## headers for major
+    sections, nested "- " bullets for everything under them) so it reads
+    cleanly when pasted into Slack/GitHub/docs instead of relying on raw
+    tab-stop indentation, which collapses/misaligns once pasted outside a
+    monospace terminal."""
+    return f"{'  ' * depth}- {text}"
+
+
 def _pct(rate: float, target: float, target_label: str) -> str:
     """ "X% of <target_label> goal", or a no-requirement note if target<=0.
     target_label is pre-formatted by the caller (e.g. "7000 W",
@@ -303,6 +347,37 @@ def _pct(rate: float, target: float, target_label: str) -> str:
     if target <= 0:
         return "no goal set"
     return f"{100 * rate / target:.1f}% of {target_label} goal"
+
+
+def _format_metatransfer(mt: np.ndarray) -> str:
+    """Metatransfer vectors are expressed in this module's internal
+    resource-equivalent units, not the item you actually select in the
+    game's Metatransfer menu (e.g. a nonzero "dop" entry literally means
+    "select Dense Originium Powder") -- METATRANSFER_ITEMS names that
+    item directly so the raw vector doesn't have to be reverse-engineered
+    by hand."""
+    parts = []
+    for name, amount in zip(RESOURCE_NAMES, mt):
+        if abs(amount) < 1e-9:
+            continue
+        item_name = METATRANSFER_ITEMS.get(name, RESOURCE_LABELS.get(name, name))
+        parts.append(f"{_fmt(amount)} {item_name}")
+    return "select " + ", ".join(parts) if parts else "none"
+
+
+def _active_metatransfer_line(
+    config: WulingConfig, rates_by_name: dict[str, float]
+) -> str | None:
+    """None if no metatransfer_option_* formula ran at a nonzero rate;
+    otherwise which real item to select in-game for whichever one did
+    (see _format_metatransfer) -- 1.4 has no separate z/metatransfer
+    scalar bookkeeping the way 1.2e's SearchResult did (see
+    wuling_1p4.search's own docstring), so the active choice has to be
+    found by checking each metatransfer_option_i's own rate directly."""
+    for i, mt in enumerate(config.metatransfers):
+        if rates_by_name.get(f"metatransfer_option_{i}", 0.0) > 1e-9:
+            return f"    Metatransfer: {_format_metatransfer(mt)}"
+    return None
 
 
 def _goal_shortfall_warnings(
@@ -323,22 +398,6 @@ def _goal_shortfall_warnings(
         f"  Warning: only {pct:.1f}% of the {_fmt(target)}{sep}{unit} {goal_name} "
         f"goal is met ({_fmt(rate)}{sep}{unit} produced)"
     ]
-
-
-def _format_metatransfer(mt: np.ndarray) -> str:
-    """Metatransfer vectors are expressed in this module's internal
-    resource-equivalent units, not the item you actually select in the
-    game's Metatransfer menu (e.g. a nonzero "dop" entry literally means
-    "select Dense Originium Powder") -- METATRANSFER_ITEMS names that
-    item directly so the raw vector doesn't have to be reverse-engineered
-    by hand."""
-    parts = []
-    for name, amount in zip(RESOURCE_NAMES, mt):
-        if abs(amount) < 1e-9:
-            continue
-        item_name = METATRANSFER_ITEMS.get(name, RESOURCE_LABELS.get(name, name))
-        parts.append(f"{_fmt(amount)} {item_name}")
-    return "select " + ", ".join(parts) if parts else "none"
 
 
 def _dollar_contributions(
@@ -422,13 +481,27 @@ def _format_result(
     if fitness_value is not None:
         header += f", fitness={fitness_value:.4f}"
     lines = [header]
+    # Every $-earning formula already gets its own itemized line in the
+    # income breakdown (amount, % produced, % of goal, sold vs.
+    # accumulating) -- repeating it in the plain recipe listing below is
+    # redundant with strictly less detail, so skip it there once the
+    # breakdown is actually shown. Only skip when the breakdown IS shown
+    # (formulas/stock_bill_cap given): "Tied alternatives" calls this
+    # without either, and still needs to show which goods are being sold
+    # to distinguish one alternative from another.
+    dollar_contribution_names: frozenset[str] = frozenset()
     if formulas is not None and stock_bill_cap is not None:
         breakdown = _format_income_breakdown(
             result, formula_names, formulas, stock_bill_cap
         )
         if breakdown:
             lines.append(breakdown)
+        dollar_contribution_names = frozenset(
+            _dollar_contributions(result, formula_names, formulas)
+        )
     for name, rate in zip(formula_names, result.formula_rates):
+        if name in dollar_contribution_names:
+            continue
         if abs(rate) > 1e-9 and not is_pp_bookkeeping_formula(name):
             full_name = FORMULA_LABELS.get(name, name)
             item_yield = GOOD_YIELD.get(name)
@@ -452,17 +525,6 @@ def _format_result(
     return "\n".join(lines)
 
 
-def _format_forge_allocation(z: int, max_forges: int) -> str:
-    """Spells out what "z" means physically: z forges feed the Xiranite
-    supply directly, the rest cap how much Heavy Xiranite can be made."""
-    hx_forges = max_forges - z
-    return (
-        f"    Forge of the Sky: {max_forges} total -- "
-        f"{z} -> Xiranite supply (+{_fmt(z * 30)}/min Xiranite), "
-        f"{hx_forges} -> Heavy Xiranite capacity (max {hx_forges} multiples)"
-    )
-
-
 def _format_material_balance(
     supply: np.ndarray, rates_by_name: dict[str, float], formulas: dict
 ) -> str:
@@ -470,14 +532,21 @@ def _format_material_balance(
     supply (mining/Forge of the Sky/Metatransfer) plus which formulas
     produce or consume it, and the net surplus -- answers "is this rate
     inclusive of other consumers, or the excess" directly, instead of
-    requiring it to be reconstructed by hand from the formula list."""
+    requiring it to be reconstructed by hand from the formula list. Each
+    source/sink line shows the formula's own multiples alongside its net
+    flow (e.g. "+120/min from Refining Unit: 30/min Ferrium Ore →
+    30/min Ferrium (4 = 4.0000 multiples)") -- FORMULA_LABELS now spells
+    out each recipe's own per-multiple ratio, so without the actual
+    multiples count a flow like "+120/min" next to a "30/min" label reads
+    as a mismatch instead of the (30/min-per-multiple x 4 multiples)
+    scaling it actually is."""
     lines = ["  Material balance (net = total produced - total consumed):"]
     for k, resource_name in enumerate(RESOURCE_NAMES):
         sources = []
         sinks = []
         if abs(supply[k]) > 1e-9:
             sources.append(
-                ("base supply (mining/Forge of the Sky/Metatransfer)", supply[k])
+                ("base supply (mining/Forge of the Sky/Metatransfer)", supply[k], None)
             )
         for name, rate in rates_by_name.items():
             if abs(rate) < 1e-9 or name not in formulas:
@@ -485,19 +554,21 @@ def _format_material_balance(
             flow = rate * formulas[name].consumption[k]
             label = FORMULA_LABELS.get(name, name)
             if flow > 1e-9:
-                sinks.append((label, flow))
+                sinks.append((label, flow, rate))
             elif flow < -1e-9:
-                sources.append((label, -flow))
+                sources.append((label, -flow, rate))
         if not sources and not sinks:
             continue
-        net = sum(v for _, v in sources) - sum(v for _, v in sinks)
+        net = sum(v for _, v, _ in sources) - sum(v for _, v, _ in sinks)
         resource_label = RESOURCE_LABELS.get(resource_name, resource_name)
         lines.append(f"    {resource_label}:")
-        for label, v in sources:
-            lines.append(f"        +{_fmt(v)}/min from {label}")
-        for label, v in sinks:
-            lines.append(f"        -{_fmt(v)}/min to {label}")
-        lines.append(f"        net: {_fmt(net)}/min")
+        for label, v, rate in sources:
+            multiples = f" ({_fmt_pair(rate)} multiples)" if rate is not None else ""
+            lines.append(f"        +{_fmt_pair(v)}/min from {label}{multiples}")
+        for label, v, rate in sinks:
+            multiples = f" ({_fmt_pair(rate)} multiples)" if rate is not None else ""
+            lines.append(f"        -{_fmt_pair(v)}/min to {label}{multiples}")
+        lines.append(f"        net: {_fmt_pair(net)}/min")
     return "\n".join(lines)
 
 
@@ -513,6 +584,10 @@ def _build_config(args: argparse.Namespace) -> WulingConfig:
         kwargs["purify_building"] = args.purify_building
     if args.purify_node is not None:
         kwargs["purify_node"] = args.purify_node
+    if args.continuous_thresholds:
+        kwargs["continuous_thresholds"] = True
+    if args.no_power_dollar_tax:
+        kwargs["power_dollar_tax"] = False
     if args.limits:
         kwargs["formula_limits"] = dict(args.limits)
     if args.outputs:
@@ -531,24 +606,36 @@ def main(argv: list[str] | None = None) -> int:
         delivery_jobs_per_day=float(args.delivery_jobs_per_day),
     )
 
-    best = search(config)
+    best_result, best_names = search(config)
     formulas = build_formulas(config)
     print(
         _format_result(
             "Optimal solution",
-            best.result,
-            best.formula_names,
+            best_result,
+            best_names,
             formulas=formulas,
             stock_bill_cap=args.stock_bill_cap,
         )
     )
-    print(f"    z={best.z}, metatransfer: {_format_metatransfer(best.metatransfer)}")
-    print(_format_forge_allocation(best.z, config.max_forges))
+    # No z scalar to surface specially here, unlike 1.2e -- Forge of the
+    # Sky's 3-way allocation and Gas Dispersing Unit's environment
+    # allocation are ordinary named formulas, already visible in the
+    # listing above via their own FORMULA_LABELS entry (e.g. "Forge of
+    # the Sky (-> Xiranite recipe capacity)") -- see wuling_1p4.search's
+    # own docstring. The metatransfer choice still gets its own line
+    # (translated to a real in-game item), since a bare
+    # "metatransfer_option_0" name in that listing isn't informative on
+    # its own.
+    metatransfer_line = _active_metatransfer_line(
+        config, dict(zip(best_names, best_result.formula_rates))
+    )
+    if metatransfer_line:
+        print(metatransfer_line)
 
     supply = full_supply(config)
     print(
         _format_material_balance(
-            supply, dict(zip(best.formula_names, best.result.formula_rates)), formulas
+            supply, dict(zip(best_names, best_result.formula_rates)), formulas
         )
     )
 
@@ -569,9 +656,7 @@ def main(argv: list[str] | None = None) -> int:
         for name in SECONDARY_GOAL_FORMULA_NAMES + SECONDARY_PLUMBING_FORMULA_NAMES
         if name != "sandleaf_powder"
     )
-    primary_names = [
-        name for name in best.formula_names if name not in _tie_detection_exclude
-    ]
+    primary_names = [name for name in best_names if name not in _tie_detection_exclude]
     primary_formulas = [formulas[name] for name in primary_names]
     # Perturb $-bearing formulas' outputs (Part 2's own "adjusting
     # weights" framing implies a zero-$ formula has no weight to begin
@@ -598,6 +683,20 @@ def main(argv: list[str] | None = None) -> int:
         print("\nTied alternatives (same $, different plan -- may include a")
         print("different forge allocation or Metatransfer choice):")
         for i, alt in enumerate(alt_result.alternatives, 1):
+            if config.power_dollar_tax:
+                # find_alternatives computed alt.dollar_output from
+                # primary_formulas' own (tax-included) .output values --
+                # back the tax out the same way search() already did for
+                # best_result, so every displayed $ figure stays
+                # consistent (see wuling_1p4.power_dollar_tax_paid).
+                rates_by_name = dict(zip(primary_names, alt.formula_rates))
+                alt = OptimizeResult(
+                    status=alt.status,
+                    dollar_output=alt.dollar_output
+                    + power_dollar_tax_paid(rates_by_name),
+                    formula_rates=alt.formula_rates,
+                    resource_slack=alt.resource_slack,
+                )
             print(_format_result(f"  Alternative {i}", alt, primary_names))
 
     refine_seed = random.randint(0, 2**31 - 1) if args.random_seed else args.refine_seed
@@ -607,7 +706,14 @@ def main(argv: list[str] | None = None) -> int:
             f"pass -s {refine_seed} to reproduce)"
         )
     search_config = SearchConfig(iterations=args.refine_iterations, seed=refine_seed)
-    refined = refine(best, config, pp_goals, search_config, backend=args.refine_backend)
+    refined = refine(
+        best_result,
+        best_names,
+        config,
+        pp_goals,
+        search_config,
+        backend=args.refine_backend,
+    )
     # The refined search runs over the FULL pp-scored formula set (real
     # recipes + pp-tier/bonus/delivery-quota bookkeeping -- see
     # pp_goals.build_pp_formulas), a superset of `formulas`/`supply`
@@ -618,6 +724,29 @@ def main(argv: list[str] | None = None) -> int:
         [pp_formulas[name].consumption for name in refined.formula_names], axis=1
     )
     refined_slack = np.maximum(0.0, pp_supply_arr - pp_consumption @ refined.rates)
+    # Every pp-tier/bonus/delivery-quota formula (is_pp_bookkeeping_formula)
+    # that scores a Hard/Nonzero-Production/Delivery-Quota goal keyed
+    # DIRECTLY on a real resource (not a synthetic flow -- e.g.
+    # pp_hetonite_part_1 on hetonite_part, delivery_quota_from_carbon on
+    # carbon) genuinely CONSUMES that resource in the LP to earn its pp,
+    # which means refined_slack above already has that consumption baked
+    # in -- a material fully "spent" satisfying its own delivery-quota/
+    # nonzero-production tier looks like zero slack, even though nothing
+    # physical actually consumed it (it's a scoring device, not a real
+    # building). accumulation_rates()/the delivery-job simulator need the
+    # material's TRUE surplus instead, so recompute slack excluding every
+    # bookkeeping formula's own consumption -- confirmed empirically this
+    # is exactly what was hiding materials from "Delivery job prediction"
+    # even when "Delivery quota" reported them as contributing.
+    _delivery_display_mask = np.array(
+        [not is_pp_bookkeeping_formula(name) for name in refined.formula_names]
+    )
+    delivery_display_slack = np.maximum(
+        0.0,
+        pp_supply_arr
+        - pp_consumption[:, _delivery_display_mask]
+        @ refined.rates[_delivery_display_mask],
+    )
     refined_result = OptimizeResult(
         status="optimal",
         dollar_output=refined.dollar_output,
@@ -696,13 +825,32 @@ def main(argv: list[str] | None = None) -> int:
     # _GEAR_MIN_TARGET_REFERENCE is purely informational, not tied to any
     # pp mechanism, just the spec's own framing ("even 0.5/min of
     # Cuprium Component is already ample") for gauging "is this enough".
+    # gearing_unit is Pyrrolite Component's own producer formula (1.4) --
+    # no dedicated "pyrrolite_component" formula exists the way the other
+    # four Gear Components each have their own eponymous formula. All
+    # five need an explicit display-name override here: FORMULA_LABELS
+    # now spells out each one's full real recipe (e.g. "Gearing Unit:
+    # 12/min Hetonite Part + 12/min Heavy Xiranite → 6/min Hetonite
+    # Component") for the main per-formula listing, which is far too
+    # verbose for this terse per-line summary (and for the "only X% of
+    # the Y/min <name> gear goal is met" warning sentence it feeds).
+    _GEAR_DISPLAY_NAMES = {
+        "hetonite_component": "Hetonite Component",
+        "xiranite_component": "Xiranite Component",
+        "cuprium_component": "Cuprium Component",
+        "ferrium_component": "Ferrium Component",
+        "gearing_unit": "Pyrrolite Component",
+    }
     for good_name in (
         "hetonite_component",
         "xiranite_component",
         "cuprium_component",
         "ferrium_component",
+        "gearing_unit",
     ):
-        label = FORMULA_LABELS.get(good_name, good_name)
+        label = _GEAR_DISPLAY_NAMES.get(good_name) or FORMULA_LABELS.get(
+            good_name, good_name
+        )
         rate = good_rates.get(good_name, 0.0)
         target_label = f"{_fmt(_GEAR_MIN_TARGET_REFERENCE)}/min"
         pct = _pct(rate, _GEAR_MIN_TARGET_REFERENCE, target_label)
@@ -720,7 +868,16 @@ def main(argv: list[str] | None = None) -> int:
         depot_capacity=args.delivery_depot_capacity,
         seed=args.delivery_seed,
     )
-    accumulating = accumulation_rates(rates_by_name, refined_slack)
+    accumulating = accumulation_rates(
+        rates_by_name,
+        delivery_display_slack,
+        resource_names=RESOURCE_NAMES,
+        resource_belt_speed=RESOURCE_BELT_SPEED,
+        resource_labels=RESOURCE_LABELS,
+        good_yield=GOOD_YIELD,
+        formula_labels=FORMULA_LABELS,
+        stashable_good_formulas=_1P4_STASHABLE_GOOD_FORMULAS,
+    )
     # Goods the outpost's $ savings can't currently afford to buy (see
     # _format_income_breakdown) don't vanish -- they pile up physically,
     # so they're delivery-job candidates too, on top of the base-resource
@@ -729,7 +886,7 @@ def main(argv: list[str] | None = None) -> int:
     refined_contributions = _dollar_contributions(
         refined_result, refined.formula_names, formulas
     )
-    refined_sold, refined_unsold = allocate_by_priority(
+    _, refined_unsold = allocate_by_priority(
         refined_contributions, list(SELL_PRIORITY), args.stock_bill_cap
     )
     for name, unsold_dollar in refined_unsold.items():

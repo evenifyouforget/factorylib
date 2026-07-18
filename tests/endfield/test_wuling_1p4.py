@@ -4,10 +4,14 @@ import pytest
 from factorylib.endfield import wuling as v1p2e
 from factorylib.endfield.wuling_1p4 import (
     _NEW_RESOURCE_NAMES,
+    _THRESHOLD_RECIPES,
+    FORMULA_WATTS,
     RESOURCE_NAMES,
     WulingConfig1p4,
+    _default_base_supply,
     build_formulas,
     full_supply,
+    power_dollar_tax_paid,
     search,
 )
 
@@ -80,9 +84,12 @@ def test_pyrrolite_has_no_base_supply_but_is_reachable_via_reverse_recipe():
     formulas = build_formulas(config)
     supply = full_supply(config)
     assert supply[RESOURCE_NAMES.index("pyrrolite")] == 0.0
-    assert "solid_gas_pyrrolite_gas_reverse" in formulas
+    # Default config models every threshold recipe as the two-layer
+    # integer alloc/run pair (see WulingConfig1p4.continuous_thresholds),
+    # so the real per-unit consumption lives on "_run", not the bare name.
+    assert "solid_gas_pyrrolite_gas_reverse_run" in formulas
     assert (
-        formulas["solid_gas_pyrrolite_gas_reverse"].consumption[
+        formulas["solid_gas_pyrrolite_gas_reverse_run"].consumption[
             RESOURCE_NAMES.index("pyrrolite")
         ]
         < 0
@@ -620,3 +627,153 @@ def test_stabilized_carbon_chain_ratios_match_old_prompt():
     ] / -stabilized.consumption[
         RESOURCE_NAMES.index("stabilized_carbon")
     ] == pytest.approx(1.0)
+
+
+# ---- Virtual power/Water/Acid $ tax (WulingConfig1p4.power_dollar_tax) ----
+
+
+def test_power_dollar_tax_resolves_forge_split_tie_deterministically():
+    """Without the tax (see test_power_dollar_tax_disabled_restores_old_
+    tie below), the default scenario's Forge of the Sky Carbon-sourcing
+    split is a genuine LP tie (many splits summing to 12 forges are
+    equally optimal). With the tax (the default), the LP has a real,
+    non-arbitrary reason to prefer the all-Stable-ENV route (needs half
+    the Carbon per Xiranite) -- confirmed empirically this is now
+    deterministic: every forge goes to the Stable ENV route, none to
+    the plain (Stabilized Carbon) route."""
+    config = WulingConfig1p4()
+    result, names = search(config)
+    rates = dict(zip(names, result.formula_rates))
+    assert rates.get("xi_forge_stable_env_alloc", 0.0) == pytest.approx(12.0)
+    assert rates.get("xi_forge_alloc", 0.0) == pytest.approx(0.0)
+
+
+def test_power_dollar_tax_disabled_restores_old_tie():
+    """power_dollar_tax=False reproduces the pre-tax behavior exactly:
+    the Forge of the Sky split is no longer forced to the all-Stable-ENV
+    route -- confirmed via HiGHS's own (arbitrary but deterministic for
+    a fixed problem) tie-breaking choosing a mixed 3/9 split instead,
+    same as before the tax was ever introduced.
+
+    The DEFAULT scenario's own Inergen/Xiragen supply is now high enough
+    (460/100, up from the original 260/30 -- see DEFAULT_INERGEN/
+    DEFAULT_XIRAGEN's own comments) that the all-Stable-ENV route wins
+    outright even with the tax off, for reasons unrelated to the tax
+    (plain abundance of gas-economy inputs) -- so reproducing the
+    original tie needs the original, smaller Inergen/Xiragen supply
+    explicitly, isolating the tax's own effect from that separate,
+    supply-driven change."""
+    supply = _default_base_supply()
+    supply[RESOURCE_NAMES.index("inergen")] = 260.0
+    supply[RESOURCE_NAMES.index("xiragen")] = 30.0
+    config = WulingConfig1p4(power_dollar_tax=False, base_supply=supply)
+    result, names = search(config)
+    rates = dict(zip(names, result.formula_rates))
+    assert rates.get("xi_forge_alloc", 0.0) > 0.0
+    assert rates.get("xi_forge_stable_env_alloc", 0.0) > 0.0
+
+
+def test_power_dollar_tax_never_changes_the_true_optimal_dollar_value():
+    """The tax only ever guides WHICH tied vertex the LP picks -- it must
+    never change the reported dollar_output, since search() backs the
+    tax back out via power_dollar_tax_paid() before returning (confirmed
+    with the user: the tax's own $ amount has no real-world meaning, it
+    deliberately covers only some buildings). Both the tax-guided and
+    untaxed searches must report the exact same historically-tied $
+    figure."""
+    with_tax, _ = search(WulingConfig1p4(power_dollar_tax=True))
+    without_tax, _ = search(WulingConfig1p4(power_dollar_tax=False))
+    assert with_tax.dollar_output == pytest.approx(without_tax.dollar_output, abs=1e-6)
+
+
+def test_power_dollar_tax_paid_matches_manual_computation():
+    """power_dollar_tax_paid() must exactly equal sum(rate * watts *
+    $/W) over every FORMULA_WATTS entry, computed independently here."""
+    dollar_per_watt = 54.0 / (3200.0 / 1.5)
+    rates_by_name = {name: float(i + 1) for i, name in enumerate(FORMULA_WATTS)}
+    rates_by_name["some_unrelated_formula"] = 999.0  # must be ignored
+    expected = sum(
+        rate * FORMULA_WATTS[name] * dollar_per_watt
+        for name, rate in rates_by_name.items()
+        if name in FORMULA_WATTS
+    )
+    assert power_dollar_tax_paid(rates_by_name) == pytest.approx(expected)
+
+
+def test_power_dollar_tax_paid_zero_for_no_rates():
+    assert power_dollar_tax_paid({}) == 0.0
+
+
+def test_formula_watts_formulas_get_negative_output_when_tax_enabled():
+    """Every FORMULA_WATTS-taxed formula (resolving the {name}_run
+    variant for threshold recipes, since the formula-name set no longer
+    depends on continuous_thresholds -- see _threshold_formulas) must
+    have a strictly negative .output when the tax is on, and exactly
+    0.0 when it's off."""
+    taxed = build_formulas(WulingConfig1p4(power_dollar_tax=True))
+    untaxed = build_formulas(WulingConfig1p4(power_dollar_tax=False))
+    for name in FORMULA_WATTS:
+        actual_name = name if name in taxed else f"{name}_run"
+        assert taxed[actual_name].output < 0.0
+        assert untaxed[actual_name].output == 0.0
+
+
+# ---- _threshold_formulas: formula-name set is invariant to
+# continuous_thresholds (only .integer changes) ----
+
+
+def test_continuous_thresholds_does_not_change_formula_names():
+    integer_names = set(build_formulas(WulingConfig1p4(continuous_thresholds=False)))
+    continuous_names = set(build_formulas(WulingConfig1p4(continuous_thresholds=True)))
+    assert integer_names == continuous_names
+
+
+def test_continuous_thresholds_toggles_alloc_integer_flag_only():
+    integer_formulas = build_formulas(WulingConfig1p4(continuous_thresholds=False))
+    continuous_formulas = build_formulas(WulingConfig1p4(continuous_thresholds=True))
+    for name, *_ in _THRESHOLD_RECIPES:
+        assert integer_formulas[f"{name}_alloc"].integer is True
+        assert continuous_formulas[f"{name}_alloc"].integer is False
+        # _run's own shape (consumption/output) must be identical either
+        # way -- only the alloc's integrality changes.
+        assert np.array_equal(
+            integer_formulas[f"{name}_run"].consumption,
+            continuous_formulas[f"{name}_run"].consumption,
+        )
+
+
+def test_threshold_recipes_reverse_derivation_matches_hand_verified_values():
+    """Regression for _reverse_threshold_recipe (auto-derives all 11
+    reverse recipes from the 11 forward ones via sign-flip): spot-check
+    a plain recipe, a batch (per-cycle) recipe, and both self-referential
+    recipes against the exact values hand-verified against
+    kaneko_1p4_data_sheet.md/old_prompt.md in the original (pre-refactor)
+    hand-written table."""
+    recipes = {
+        name: (threshold_good, max_rate, other)
+        for name, threshold_good, max_rate, other in _THRESHOLD_RECIPES
+    }
+
+    assert recipes["fluid_gas_aquagen_reverse"] == (
+        "liquid_xiranite",
+        30.0,
+        {"aquagen": 1.0},
+    )
+    assert recipes["fluid_gas_heavy_xiragen_reverse"] == (
+        "liquid_xiranite",
+        6.0,
+        {"heavy_xiragen": 5.0, "liquid_heavy_xiranite": -2.0},
+    )
+    # Self-referential: the threshold good is ALSO the recipe's own
+    # reactant/product, so the reverse's sign flip must apply to that
+    # SAME combined entry too, not just the "other" item.
+    assert recipes["fluid_gas_xiragen_reverse"] == (
+        "liquid_xiranite",
+        30.0,
+        {"liquid_xiranite": -1.0, "xiragen": 1.0},
+    )
+    assert recipes["solid_gas_xiragen_reverse"] == (
+        "xiragen",
+        30.0,
+        {"xiragen": 1.0, "xi": -1.0},
+    )

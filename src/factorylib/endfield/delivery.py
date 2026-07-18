@@ -26,6 +26,8 @@ Two kinds of accumulator:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 
 from factorylib.delivery import (
@@ -56,7 +58,15 @@ _STASHABLE_GOOD_FORMULAS = (
 
 
 def accumulation_rates(
-    rates_by_name: dict[str, float], resource_slack: np.ndarray
+    rates_by_name: dict[str, float],
+    resource_slack: np.ndarray,
+    *,
+    resource_names: Sequence[str] = RESOURCE_NAMES,
+    resource_belt_speed: dict[str, float] = RESOURCE_BELT_SPEED,
+    resource_labels: dict[str, str] = RESOURCE_LABELS,
+    good_yield: dict[str, float] = GOOD_YIELD,
+    formula_labels: dict[str, str] = FORMULA_LABELS,
+    stashable_good_formulas: Sequence[str] = _STASHABLE_GOOD_FORMULAS,
 ) -> dict[str, float]:
     """Every material that would plausibly pile up, unconsumed, in the
     depot, keyed by full label: base *solid* resources with leftover
@@ -67,16 +77,28 @@ def accumulation_rates(
     forge/metatransfer unification): they have no entry in
     RESOURCE_BELT_SPEED at all, so excluding only liquids (belt_speed ==
     120) let them slip through as if they were real depot-storable
-    goods; requiring belt_speed == 30 (solids) excludes them for free."""
+    goods; requiring belt_speed == 30 (solids) excludes them for free.
+
+    resource_names/resource_belt_speed/resource_labels/good_yield/
+    formula_labels/stashable_good_formulas default to 1.2e's own (from
+    wuling.py) -- pass wuling_1p4's equivalents for a 1.4 plan instead.
+    1.4-specific note: only ferrium_component has NO real consumer
+    there (unlike 1.2e, where all four Gear Components are pure dead
+    ends) -- Xiranite/Cuprium/Hetonite Component now feed the Crafting
+    Point chain via their own real xiranite_component_item/etc.
+    resource, so their surplus should come through resource_slack
+    (belt_speed=30 there too), not stashable_good_formulas' gross-rate
+    path, matching how sandleaf_powder was already fixed once IT gained
+    a real consumer (see module docstring)."""
     rates: dict[str, float] = {
-        RESOURCE_LABELS.get(name, name): float(slack)
-        for name, slack in zip(RESOURCE_NAMES, resource_slack)
-        if slack > 1e-9 and RESOURCE_BELT_SPEED.get(name) == _SOLID_BELT_SPEED
+        resource_labels.get(name, name): float(slack)
+        for name, slack in zip(resource_names, resource_slack)
+        if slack > 1e-9 and resource_belt_speed.get(name) == _SOLID_BELT_SPEED
     }
-    for name in _STASHABLE_GOOD_FORMULAS:
-        rate = rates_by_name.get(name, 0.0) * GOOD_YIELD.get(name, 1.0)
+    for name in stashable_good_formulas:
+        rate = rates_by_name.get(name, 0.0) * good_yield.get(name, 1.0)
         if rate > 1e-9:
-            rates[FORMULA_LABELS.get(name, name)] = rate
+            rates[formula_labels.get(name, name)] = rate
     return rates
 
 
