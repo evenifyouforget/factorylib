@@ -6,6 +6,7 @@ from factorylib.endfield.wuling_1p4 import (
     _NEW_RESOURCE_NAMES,
     _THRESHOLD_RECIPES,
     FORMULA_WATTS,
+    GOOD_YIELD,
     RESOURCE_NAMES,
     WulingConfig1p4,
     _default_base_supply,
@@ -777,3 +778,93 @@ def test_threshold_recipes_reverse_derivation_matches_hand_verified_values():
         30.0,
         {"xiragen": 1.0, "xi": -1.0},
     )
+
+
+# ---- "1 multiple = 1 building's real /min rate" scaling, not a raw
+# per-cycle item count (user-reported: "Forge of the Sky, Stable ENV:
+# 1/min Carbon + 1/min Water -> 1/min Xiranite" was wrong -- every
+# "every 2 seconds"/"every 10 seconds" recipe must convert to 30/min or
+# 6/min as its base per-multiple rate) ----
+
+
+def test_threshold_run_formulas_scale_other_consumption_by_max_rate():
+    """_threshold_formulas' run_vec must be other_consumption scaled by
+    max_rate (30 or 6), not the raw per-cycle magnitude -- confirmed
+    against fluid_gas_aquagen (max_rate=30, {"aquagen": -1.0} ->
+    -30.0/min) and fluid_gas_heavy_xiragen (max_rate=6, batch recipe,
+    {"liquid_heavy_xiranite": 2.0, "heavy_xiragen": -5.0} -> 12.0/-30.0)."""
+    formulas = build_formulas(WulingConfig1p4())
+    aquagen_run = formulas["fluid_gas_aquagen_run"]
+    assert aquagen_run.consumption[RESOURCE_NAMES.index("aquagen")] == -30.0
+    heavy_xiragen_run = formulas["fluid_gas_heavy_xiragen_run"]
+    assert (
+        heavy_xiragen_run.consumption[RESOURCE_NAMES.index("liquid_heavy_xiranite")]
+        == 12.0
+    )
+    assert heavy_xiragen_run.consumption[RESOURCE_NAMES.index("heavy_xiragen")] == -30.0
+
+
+def test_threshold_alloc_mints_exactly_one_capacity_unit_per_building():
+    """Every {name}_alloc must mint exactly 1 unit of {name}_capacity per
+    building (not max_rate units) -- matching 1.2e's own hx_forge_alloc/
+    hx_make precedent, so 1 run-multiple = 1 fully-committed building."""
+    formulas = build_formulas(WulingConfig1p4())
+    for name, *_ in _THRESHOLD_RECIPES:
+        capacity_idx = RESOURCE_NAMES.index(f"{name}_capacity")
+        assert formulas[f"{name}_alloc"].consumption[capacity_idx] == -1.0
+        assert formulas[f"{name}_run"].consumption[capacity_idx] == 1.0
+
+
+def test_xi_forge_run_formulas_produce_30_per_min_xiranite_per_multiple():
+    """Forge of the Sky's real recipe ("1 Carbon + 1 Water -> 1 Xiranite
+    every 2 seconds") saturates at 30/min per building -- xi_forge_run/
+    xi_forge_stable_env_run must reflect that, not the raw 1-per-cycle
+    count (the exact bug reported: the CLI showed "1/min Carbon + 1/min
+    Water -> 1/min Xiranite" instead of the real 30/min)."""
+    formulas = build_formulas(WulingConfig1p4())
+    assert formulas["xi_forge_run"].consumption[RESOURCE_NAMES.index("xi")] == -30.0
+    assert (
+        formulas["xi_forge_run"].consumption[RESOURCE_NAMES.index("stabilized_carbon")]
+        == 60.0
+    )
+    assert (
+        formulas["xi_forge_stable_env_run"].consumption[RESOURCE_NAMES.index("xi")]
+        == -30.0
+    )
+    assert (
+        formulas["xi_forge_stable_env_run"].consumption[RESOURCE_NAMES.index("carbon")]
+        == 30.0
+    )
+    assert (
+        formulas["xi_forge_alloc"].consumption[
+            RESOURCE_NAMES.index("xi_forge_capacity")
+        ]
+        == -1.0
+    )
+
+
+def test_gearing_unit_matches_the_other_gear_components_own_scale():
+    """gearing_unit (Pyrrolite Component's own 1.4 producer) must use the
+    SAME "1 multiple = 1 building = 6 Component/min" scale the other four
+    1.2e-legacy Gear Component formulas already use (e.g. hetonite_component:
+    12 Hetonite Part + 12 Heavy Xiranite -> 6 Hetonite Component) -- an
+    earlier version left it at the raw "1 Pyrrolite -> 1 Pyrrolite
+    Component" per-cycle count instead."""
+    formulas = build_formulas(WulingConfig1p4())
+    gearing_unit = formulas["gearing_unit"]
+    assert gearing_unit.consumption[RESOURCE_NAMES.index("pyrrolite")] == 6.0
+    assert gearing_unit.consumption[RESOURCE_NAMES.index("heavy_xiranite")] == 12.0
+    assert gearing_unit.consumption[RESOURCE_NAMES.index("pyrrolite_component")] == -6.0
+    assert GOOD_YIELD["gearing_unit"] == 6.0
+
+
+def test_scaling_fix_does_not_change_the_true_optimal_dollar_value():
+    """This whole fix is a pure change of variables (scale run-rate
+    variables down by max_rate, scale their coefficients up to match) --
+    the $-optimal value of the default scenario must be bit-for-bit
+    unchanged by it. Regression pin against the current default figure,
+    so a future accidental re-introduction of a stray un-rescaled
+    coefficient (breaking the change-of-variables equivalence) would
+    show up as a $ change here."""
+    result, _ = search(WulingConfig1p4())
+    assert result.dollar_output == pytest.approx(606727 / 250)
