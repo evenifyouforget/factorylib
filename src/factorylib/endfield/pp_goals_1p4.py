@@ -132,7 +132,11 @@ _COMPONENT_FLOW_CONTRIBUTORS = {
     "xiranite_component": 6.0,
     "cuprium_component": 6.0,
     "hetonite_component": 6.0,
-    "gearing_unit": 1.0,
+    # 6.0, not 1.0: gearing_unit's own consumption is now scaled to the
+    # real "1 multiple = 1 building = 6 Pyrrolite Component/min"
+    # convention (see wuling_1p4.build_formulas' own comment on this
+    # fix), matching the other four Gear Components' own scale exactly.
+    "gearing_unit": 6.0,
 }
 
 

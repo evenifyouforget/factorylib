@@ -491,13 +491,13 @@ FORMULA_LABELS = {
         "Forge of the Sky: 1 building → 30/min Xiranite recipe capacity"
     ),
     "xi_forge_run": (
-        "Forge of the Sky: 2/min Stabilized Carbon + 1/min Water → 1/min Xiranite"
+        "Forge of the Sky: 60/min Stabilized Carbon + 30/min Water → 30/min Xiranite"
     ),
     "xi_forge_stable_env_alloc": (
         "Forge of the Sky, Stable ENV: 1 building → 30/min Xiranite recipe capacity"
     ),
     "xi_forge_stable_env_run": (
-        "Forge of the Sky, Stable ENV: 1/min Carbon + 1/min Water → 1/min Xiranite"
+        "Forge of the Sky, Stable ENV: 30/min Carbon + 30/min Water → 30/min Xiranite"
     ),
     "hx_forge_alloc": (
         "Forge of the Sky: 1 building → 1/min Heavy Xiranite recipe capacity"
@@ -517,36 +517,38 @@ FORMULA_LABELS = {
     ),
     # ---- New continuous recipes ----
     "reactor_crucible_liquid_heavy_xiranite": (
-        "Reactor Crucible: 1/min Heavy Xiranite + 1/min Acid → "
-        "1/min Liquid Heavy Xiranite"
+        "Reactor Crucible: 30/min Heavy Xiranite + 30/min Acid → "
+        "30/min Liquid Heavy Xiranite"
     ),
-    "fitting_unit": "Fitting Unit: 5/min Pyrrolite → 1/min Pyrrolite Part",
+    "fitting_unit": "Fitting Unit: 30/min Pyrrolite → 6/min Pyrrolite Part",
     "moulding_unit": (
-        "Moulding Unit: 2/min Cuprium + 1/min Inergen → 1/min Cuprium Canister"
+        "Moulding Unit: 60/min Cuprium + 30/min Inergen → 30/min Cuprium Canister"
     ),
     "gearing_unit": (
-        "Gearing Unit: 1/min Pyrrolite + 2/min Heavy Xiranite → "
-        "1/min Pyrrolite Component"
+        "Gearing Unit: 6/min Pyrrolite + 12/min Heavy Xiranite → "
+        "6/min Pyrrolite Component"
     ),
     "filling_unit_inergen": (
-        "Filling Unit: 1/min Cuprium Canister + 1/min Inergen → "
-        "1/min Cuprium Canister filled with Inergen"
+        "Filling Unit: 30/min Cuprium Canister + 30/min Inergen → "
+        "30/min Cuprium Canister filled with Inergen"
     ),
     "filling_unit_xiragen": (
-        "Filling Unit: 1/min Cuprium Canister + 1/min Xiragen → "
-        "1/min Cuprium Canister filled with Xiragen"
+        "Filling Unit: 30/min Cuprium Canister + 30/min Xiragen → "
+        "30/min Cuprium Canister filled with Xiragen"
     ),
     "packaging_unit": (
-        "Packaging Unit: 1/min Cuprium Canister + 1/min Xiranite → 2/min Separator Core"
+        "Packaging Unit: 30/min Cuprium Canister + 30/min Xiranite → "
+        "60/min Separator Core"
     ),
     "pyrrolite_part_sell": "Pyrrolite Part (sellable)",
     "separator_core_sell": "Separator Core (sellable)",
     "purification_heavy_xiragen": (
-        "Purification Unit: 2/min Xiragen + 2/min Separator Core → 1/min Heavy Xiragen"
+        "Purification Unit: 60/min Xiragen + 60/min Separator Core → "
+        "30/min Heavy Xiragen"
     ),
     "purification_hetonite_gas": (
-        "Purification Unit: 2/min Cuprium Gas + 2/min Separator Core → "
-        "1/min Hetonite Gas"
+        "Purification Unit: 60/min Cuprium Gas + 60/min Separator Core → "
+        "30/min Hetonite Gas"
     ),
     # ---- Fluid-Gas Transmuting Unit (both directions) ----
     # Liquid Xiranite's [threshold 6/min] activation is charged via the
@@ -557,97 +559,97 @@ FORMULA_LABELS = {
     # real recipe.
     "fluid_gas_aquagen": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "1/min Water → 1/min Aquagen"
+        "30/min Water → 30/min Aquagen"
     ),
     "fluid_gas_aquagen_reverse": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "1/min Aquagen → 1/min Water"
+        "30/min Aquagen → 30/min Water"
     ),
     "fluid_gas_xiragen": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "1/min Liquid Xiranite → 1/min Xiragen"
+        "30/min Liquid Xiranite → 30/min Xiragen"
     ),
     "fluid_gas_xiragen_reverse": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "1/min Xiragen → 1/min Liquid Xiranite"
+        "30/min Xiragen → 30/min Liquid Xiranite"
     ),
     "fluid_gas_cuprium_gas": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "2/min Cuprium Solution → 1/min Cuprium Gas"
+        "60/min Cuprium Solution → 30/min Cuprium Gas"
     ),
     "fluid_gas_cuprium_gas_reverse": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "1/min Cuprium Gas → 2/min Cuprium Solution"
+        "30/min Cuprium Gas → 60/min Cuprium Solution"
     ),
     "fluid_gas_acridgen": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "1/min Acid → 1/min Acridgen"
+        "30/min Acid → 30/min Acridgen"
     ),
     "fluid_gas_acridgen_reverse": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "1/min Acridgen → 1/min Acid"
+        "30/min Acridgen → 30/min Acid"
     ),
     "fluid_gas_heavy_xiragen": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "2/min Liquid Heavy Xiranite → 5/min Heavy Xiragen"
+        "12/min Liquid Heavy Xiranite → 30/min Heavy Xiragen"
     ),
     "fluid_gas_heavy_xiragen_reverse": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "5/min Heavy Xiragen → 2/min Liquid Heavy Xiranite"
+        "30/min Heavy Xiragen → 12/min Liquid Heavy Xiranite"
     ),
     "fluid_gas_hetonite_gas": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "1/min Hetonite Solution → 1/min Hetonite Gas"
+        "30/min Hetonite Solution → 30/min Hetonite Gas"
     ),
     "fluid_gas_hetonite_gas_reverse": (
         "Fluid-Gas Transmuting Unit: Liquid Xiranite[threshold 6/min] + "
-        "1/min Hetonite Gas → 1/min Hetonite Solution"
+        "30/min Hetonite Gas → 30/min Hetonite Solution"
     ),
     # ---- Solid-Gas Transmuting Unit (both directions) ----
     "solid_gas_xiragen": (
         "Solid-Gas Transmuting Unit: Xiragen[threshold 6/min] + "
-        "1/min Xiranite → 1/min Xiragen"
+        "30/min Xiranite → 30/min Xiragen"
     ),
     "solid_gas_xiragen_reverse": (
         "Solid-Gas Transmuting Unit: Xiragen[threshold 6/min] + "
-        "1/min Xiragen → 1/min Xiranite"
+        "30/min Xiragen → 30/min Xiranite"
     ),
     "solid_gas_heavy_xiragen": (
         "Solid-Gas Transmuting Unit: Xiragen[threshold 6/min] + "
-        "2/min Heavy Xiranite → 5/min Heavy Xiragen"
+        "12/min Heavy Xiranite → 30/min Heavy Xiragen"
     ),
     "solid_gas_heavy_xiragen_reverse": (
         "Solid-Gas Transmuting Unit: Xiragen[threshold 6/min] + "
-        "5/min Heavy Xiragen → 2/min Heavy Xiranite"
+        "30/min Heavy Xiragen → 12/min Heavy Xiranite"
     ),
     "solid_gas_cuprium_gas": (
         "Solid-Gas Transmuting Unit: Xiragen[threshold 6/min] + "
-        "2/min Cuprium → 1/min Cuprium Gas"
+        "60/min Cuprium → 30/min Cuprium Gas"
     ),
     "solid_gas_cuprium_gas_reverse": (
         "Solid-Gas Transmuting Unit: Xiragen[threshold 6/min] + "
-        "1/min Cuprium Gas → 2/min Cuprium"
+        "30/min Cuprium Gas → 60/min Cuprium"
     ),
     "solid_gas_hetonite_gas": (
         "Solid-Gas Transmuting Unit: Xiragen[threshold 6/min] + "
-        "1/min Hetonite → 2/min Hetonite Gas"
+        "30/min Hetonite → 60/min Hetonite Gas"
     ),
     "solid_gas_hetonite_gas_reverse": (
         "Solid-Gas Transmuting Unit: Xiragen[threshold 6/min] + "
-        "2/min Hetonite Gas → 1/min Hetonite"
+        "60/min Hetonite Gas → 30/min Hetonite"
     ),
     "solid_gas_pyrrolite_gas": (
         "Solid-Gas Transmuting Unit: Xiragen[threshold 6/min] + "
-        "1/min Pyrrolite → 1/min Pyrrolite Gas"
+        "30/min Pyrrolite → 30/min Pyrrolite Gas"
     ),
     "solid_gas_pyrrolite_gas_reverse": (
         "Solid-Gas Transmuting Unit: Xiragen[threshold 6/min] + "
-        "1/min Pyrrolite Gas → 1/min Pyrrolite"
+        "30/min Pyrrolite Gas → 30/min Pyrrolite"
     ),
     # ---- Gas Reactor Globe ----
     "gas_reactor_globe_alloc": "Gas Reactor Globe: 1 building → 30/min recipe capacity",
     "gas_reactor_globe_run": (
-        "Gas Reactor Globe: 2/min Hetonite Gas + 1/min Xiragen → 1/min Pyrrolite Gas"
+        "Gas Reactor Globe: 60/min Hetonite Gas + 30/min Xiragen → 30/min Pyrrolite Gas"
     ),
     # ---- Stable-ENV Purification Unit variants ----
     "purification_heavy_xiragen_stable_alloc": (
@@ -655,16 +657,16 @@ FORMULA_LABELS = {
         "30/min Heavy Xiragen recipe capacity"
     ),
     "purification_heavy_xiragen_stable_run": (
-        "Purification Unit, Stable ENV: 2/min Xiragen + 1/min Separator Core → "
-        "1/min Heavy Xiragen"
+        "Purification Unit, Stable ENV: 60/min Xiragen + 30/min Separator Core → "
+        "30/min Heavy Xiragen"
     ),
     "purification_hetonite_gas_stable_alloc": (
         "Purification Unit, Stable ENV: 1 building → "
         "30/min Hetonite Gas recipe capacity"
     ),
     "purification_hetonite_gas_stable_run": (
-        "Purification Unit, Stable ENV: 2/min Cuprium Gas + 1/min Separator Core → "
-        "1/min Hetonite Gas"
+        "Purification Unit, Stable ENV: 60/min Cuprium Gas + 30/min Separator Core → "
+        "30/min Hetonite Gas"
     ),
     # ---- Gear-crafting Point chain (flexible_gear_crafting.md's own
     # conversion ratios -- not a real in-game building, a modeling
@@ -750,14 +752,20 @@ FORMULA_WATTS = {
     "cuprium_solution_make": 30.0 * _WATTS_PER_ACID,
     "yazhen_solution_make": 30.0 * _WATTS_PER_WATER,
     "jincao_solution_make": 30.0 * _WATTS_PER_WATER,
-    "xi_forge_run": 1.0 * _WATTS_PER_WATER,
-    "xi_forge_stable_env_run": 1.0 * _WATTS_PER_WATER,
+    # These five formulas' own consumption is now scaled to the real
+    # 30/min-per-building rate (see _threshold_formulas' and
+    # build_formulas' own comments on the "1 multiple = 1 building"
+    # rescaling fix) -- their Water/Acid draw per multiple scales the
+    # same way, x30, to keep the same $/output ratio the tax is
+    # calibrated against.
+    "xi_forge_run": 30.0 * _WATTS_PER_WATER,
+    "xi_forge_stable_env_run": 30.0 * _WATTS_PER_WATER,
     # fluid_gas_aquagen/fluid_gas_acridgen always exist as "_run" (see
     # _threshold_formulas -- the formula-name set no longer depends on
     # WulingConfig1p4.continuous_thresholds).
-    "fluid_gas_aquagen_run": 1.0 * _WATTS_PER_WATER,
-    "fluid_gas_acridgen_run": 1.0 * _WATTS_PER_ACID,
-    "reactor_crucible_liquid_heavy_xiranite": 1.0 * _WATTS_PER_ACID,
+    "fluid_gas_aquagen_run": 30.0 * _WATTS_PER_WATER,
+    "fluid_gas_acridgen_run": 30.0 * _WATTS_PER_ACID,
+    "reactor_crucible_liquid_heavy_xiranite": 30.0 * _WATTS_PER_ACID,
 }
 
 # $/multiple for every formula that earns real money directly -- every
@@ -791,12 +799,15 @@ GOOD_YIELD = {
     **v1p2e.GOOD_YIELD,
     "pyrrolite_part_sell": 1.0,
     "separator_core_sell": 1.0,
-    "fitting_unit": 1.0,
-    "moulding_unit": 1.0,
-    "gearing_unit": 1.0,
-    "filling_unit_inergen": 1.0,
-    "filling_unit_xiragen": 1.0,
-    "packaging_unit": 2.0,
+    # Real items/min per multiple, matching each formula's own rescaled
+    # consumption above (build_formulas' "1 multiple = 1 building"
+    # fix) -- NOT the raw per-cycle item counts.
+    "fitting_unit": 6.0,
+    "moulding_unit": 30.0,
+    "gearing_unit": 6.0,
+    "filling_unit_inergen": 30.0,
+    "filling_unit_xiragen": 30.0,
+    "packaging_unit": 60.0,
 }
 
 # No new power routes in 1.4 (kaneko_1p4_data_sheet.md doesn't mention
@@ -1050,11 +1061,23 @@ def _threshold_formulas(
     caused).
 
     `{name}_alloc` commits one building at a time, paying the FIXED
-    6/min threshold cost regardless of utilization and minting
-    `max_rate` units of `{name}_capacity` -- that building's own real
-    per-minute throughput cap. `{name}_run` is continuous, consuming
-    that capacity 1-for-1 with real throughput alongside every other
-    real reactant/product in other_consumption.
+    6/min threshold cost regardless of utilization and minting exactly 1
+    unit of `{name}_capacity` -- matching 1.2e's own hx_forge_alloc/
+    hx_make precedent (wuling.py), where 1 alloc-multiple = 1 building
+    and the paired production formula's own consumption/output are
+    already expressed at that building's real per-minute rate, not a raw
+    per-cycle count. `{name}_run` is continuous, consuming that capacity
+    1-for-1 -- so `{name}_run`'s own rate is genuinely "how many
+    buildings' worth of continuous throughput", and other_consumption
+    (given in raw per-cycle terms, e.g. "1 Aquagen every 2 seconds") is
+    scaled up by `max_rate` here so 1 run-multiple means 1 building
+    running its real max_rate/min throughput, the same "1 multiple = 1
+    building's natural rate" convention every other production formula's
+    label uses (confirmed: an earlier version left this unscaled, so a
+    formula like fluid_gas_aquagen_run showed "1/min Water -> 1/min
+    Aquagen" per multiple instead of the real 30/min -- see
+    FORMULA_WATTS' own comment, which needed the identical fix for the
+    Water/Acid draw of these same formulas).
 
     continuous controls only whether `{name}_alloc` is integer=True (the
     default, continuous=False -- a real building count, so a partially-
@@ -1063,18 +1086,20 @@ def _threshold_formulas(
     proportionally) or integer=False (continuous=True -- a "fractional
     buildings" relaxation, mathematically exact reproduction of the old
     proportional-folding approximation: with alloc unconstrained and
-    continuous, the LP can always set alloc's rate to exactly
-    run_rate/max_rate, giving the exact same threshold_good-per-output
-    ratio as the old single-formula version, no rounding/discretization
-    loss -- see module docstring for why this can still differ
-    economically from the integer model once utilization isn't free to
-    optimize continuously)."""
+    continuous, the LP can always set alloc's rate to exactly run_rate,
+    giving the exact same threshold_good-per-output ratio as the old
+    single-formula version, no rounding/discretization loss -- see
+    module docstring for why this can still differ economically from the
+    integer model once utilization isn't free to optimize
+    continuously)."""
     capacity = f"{name}_capacity"
-    run_vec = dict(other_consumption)
+    run_vec = {
+        resource: amount * max_rate for resource, amount in other_consumption.items()
+    }
     run_vec[capacity] = run_vec.get(capacity, 0.0) + 1.0
     return {
         f"{name}_alloc": make_formula(
-            {threshold_good: 6.0, capacity: -max_rate}, 0.0, integer=not continuous
+            {threshold_good: 6.0, capacity: -1.0}, 0.0, integer=not continuous
         ),
         f"{name}_run": make_formula(run_vec, 0.0),
     }
@@ -1348,28 +1373,36 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
     )
 
     # ---- Forge of the Sky: 12 buildings, 3 competing recipes ----
-    # (see module docstring for the two-layer capacity/run rationale)
+    # (see module docstring for the two-layer capacity/run rationale;
+    # same "1 alloc-multiple = 1 building = mints exactly 1 unit of
+    # capacity, run's own consumption/output already at the real 30/min
+    # per-building rate" convention _threshold_formulas uses -- an
+    # earlier version minted/consumed max_rate(=30)-scaled capacity
+    # instead, leaving xi_forge_run/xi_forge_stable_env_run's own labels
+    # showing a misleading "1/min" per multiple instead of the real
+    # 30/min a "Forge of the Sky: 1 Carbon + 1 Water -> 1 Xiranite every
+    # 2 seconds" building actually produces at full utilization).
     f["xi_forge_alloc"] = make_formula(
-        {"forge_budget": 1.0, "xi_forge_capacity": -30.0},
+        {"forge_budget": 1.0, "xi_forge_capacity": -1.0},
         0.0,
         limit=float(config.max_forges),
         integer=True,
     )
     f["xi_forge_run"] = make_formula(
-        {"xi_forge_capacity": 1.0, "stabilized_carbon": 2.0, "xi": -1.0}, 0.0
+        {"xi_forge_capacity": 1.0, "stabilized_carbon": 60.0, "xi": -30.0}, 0.0
     )
     f["xi_forge_stable_env_alloc"] = make_formula(
         {
             "forge_budget": 1.0,
             "stable_env_allowance": 1.0,
-            "xi_forge_stable_env_capacity": -30.0,
+            "xi_forge_stable_env_capacity": -1.0,
         },
         0.0,
         limit=float(config.max_forges),
         integer=True,
     )
     f["xi_forge_stable_env_run"] = make_formula(
-        {"xi_forge_stable_env_capacity": 1.0, "carbon": 1.0, "xi": -1.0}, 0.0
+        {"xi_forge_stable_env_capacity": 1.0, "carbon": 30.0, "xi": -30.0}, 0.0
     )
     f["hx_forge_alloc"] = make_formula(
         {"forge_budget": 1.0, "hx_forge_capacity": -1.0},
@@ -1393,7 +1426,26 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
     )
 
     # ---- New continuous recipes (no stated building-count cap) ----
-    # Reactor Crucible: 1 Heavy Xiranite + 1 Acid -> 1 Liquid Heavy
+    # Every recipe below is given directly in the data sheet as a raw
+    # "every N seconds" cycle (e.g. "1 Heavy Xiranite + 1 Acid -> 1
+    # Liquid Heavy Xiranite, every 2 seconds") -- scaled here to the
+    # recipe's own real per-minute rate at full utilization (x30 for
+    # "every 2 seconds", x6 for "every 10 seconds"), matching the "1
+    # multiple = 1 building's real throughput" convention every OTHER
+    # production formula in this module (and 1.2e's own, e.g. hx_make:
+    # "60 Xiranite + 30 Xircon Effluent -> 6 Heavy Xiranite") already
+    # uses. An earlier version left these at their raw per-cycle
+    # magnitudes (e.g. "1 Pyrrolite -> 1 Pyrrolite Component" for
+    # gearing_unit's real "1 Pyrrolite + 2 Heavy Xiranite -> 1 Pyrrolite
+    # Component, every 10 seconds"), which is internally self-consistent
+    # (a "multiple" still means something, just item/min instead of
+    # buildings) but inconsistent with every other label's stated
+    # per-multiple /min quantities, and with GOOD_YIELD/
+    # _COMPONENT_FLOW_CONTRIBUTORS (pp_goals_1p4.py) which both already
+    # assumed the OTHER (correct) convention for the four 1.2e-legacy
+    # Gear Components -- both updated alongside this fix.
+    #
+    # Reactor Crucible: 30 Heavy Xiranite + 30 Acid -> 30 Liquid Heavy
     # Xiranite (Acid is free/unconstrained, matching wuling.py's own
     # Water/Acid convention -- see its module docstring). Mirrors 1.2e's
     # own liquid_xiranite_make (Xiranite -> Liquid Xiranite) exactly.
@@ -1409,33 +1461,42 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
     # merged), but the same "audit every resource's actual production
     # path" fix applies.
     f["reactor_crucible_liquid_heavy_xiranite"] = make_formula(
-        {"heavy_xiranite": 1.0, "liquid_heavy_xiranite": -1.0}, 0.0
+        {"heavy_xiranite": 30.0, "liquid_heavy_xiranite": -30.0}, 0.0
     )
-    f["fitting_unit"] = make_formula({"pyrrolite": 5.0, "pyrrolite_part": -1.0}, 0.0)
+    # Fitting Unit: 30 Pyrrolite -> 6 Pyrrolite Part (every 10 seconds).
+    f["fitting_unit"] = make_formula({"pyrrolite": 30.0, "pyrrolite_part": -6.0}, 0.0)
+    # Moulding Unit: 60 Cuprium + 30 Inergen -> 30 Cuprium Canister
+    # (every 2 seconds).
     f["moulding_unit"] = make_formula(
-        {"cup": 2.0, "inergen": 1.0, "cuprium_canister": -1.0}, 0.0
+        {"cup": 60.0, "inergen": 30.0, "cuprium_canister": -30.0}, 0.0
     )
+    # Gearing Unit: 6 Pyrrolite + 12 Heavy Xiranite -> 6 Pyrrolite
+    # Component (every 10 seconds).
     f["gearing_unit"] = make_formula(
-        {"pyrrolite": 1.0, "heavy_xiranite": 2.0, "pyrrolite_component": -1.0}, 0.0
+        {"pyrrolite": 6.0, "heavy_xiranite": 12.0, "pyrrolite_component": -6.0}, 0.0
     )
+    # Filling Unit: 30 Cuprium Canister + 30 (gas) -> 30 Cuprium Canister
+    # filled with that gas (every 2 seconds).
     f["filling_unit_inergen"] = make_formula(
         {
-            "cuprium_canister": 1.0,
-            "inergen": 1.0,
-            "cuprium_canister_inergen": -1.0,
+            "cuprium_canister": 30.0,
+            "inergen": 30.0,
+            "cuprium_canister_inergen": -30.0,
         },
         0.0,
     )
     f["filling_unit_xiragen"] = make_formula(
         {
-            "cuprium_canister": 1.0,
-            "xiragen": 1.0,
-            "cuprium_canister_xiragen": -1.0,
+            "cuprium_canister": 30.0,
+            "xiragen": 30.0,
+            "cuprium_canister_xiragen": -30.0,
         },
         0.0,
     )
+    # Packaging Unit: 30 Cuprium Canister + 30 Xiranite -> 60 Separator
+    # Core (every 2 seconds).
     f["packaging_unit"] = make_formula(
-        {"cuprium_canister": 1.0, "xi": 1.0, "separator_core": -2.0}, 0.0
+        {"cuprium_canister": 30.0, "xi": 30.0, "separator_core": -60.0}, 0.0
     )
 
     # New Cloudseeder Station sellable goods (kaneko_1p4_data_sheet.md's
@@ -1450,11 +1511,15 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
     # given for them (unlike e.g. sc_sell's 6-item batches).
     f["pyrrolite_part_sell"] = make_formula({"pyrrolite_part": 1.0}, 70.0)
     f["separator_core_sell"] = make_formula({"separator_core": 1.0}, 1.0)
+    # Purification Unit: 60 Xiragen + 60 Separator Core -> 30 Heavy
+    # Xiragen (every 2 seconds).
     f["purification_heavy_xiragen"] = make_formula(
-        {"xiragen": 2.0, "separator_core": 2.0, "heavy_xiragen": -1.0}, 0.0
+        {"xiragen": 60.0, "separator_core": 60.0, "heavy_xiragen": -30.0}, 0.0
     )
+    # Purification Unit: 60 Cuprium Gas + 60 Separator Core -> 30
+    # Hetonite Gas (every 2 seconds).
     f["purification_hetonite_gas"] = make_formula(
-        {"cuprium_gas": 2.0, "separator_core": 2.0, "hetonite_gas": -1.0}, 0.0
+        {"cuprium_gas": 60.0, "separator_core": 60.0, "hetonite_gas": -30.0}, 0.0
     )
 
     # Fluid-Gas/Solid-Gas Transmuting Unit: both directions modeled for
@@ -1481,28 +1546,32 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
 
     # Gas Reactor Globe: Acrid ENV-gated, so it gets the two-layer
     # capacity/run pattern (unbounded building count, but the ENV
-    # allowance backing it is itself limited).
+    # allowance backing it is itself limited). Same "1 alloc-multiple =
+    # 1 building = mints exactly 1 unit of capacity, run's own
+    # consumption/output at the real 30/min per-building rate"
+    # convention as xi_forge_run/_threshold_formulas above.
     f["gas_reactor_globe_alloc"] = make_formula(
-        {"acrid_env_allowance": 1.0, "gas_reactor_globe_capacity": -30.0},
+        {"acrid_env_allowance": 1.0, "gas_reactor_globe_capacity": -1.0},
         0.0,
         integer=True,
     )
     f["gas_reactor_globe_run"] = make_formula(
         {
             "gas_reactor_globe_capacity": 1.0,
-            "hetonite_gas": 2.0,
-            "xiragen": 1.0,
-            "pyrrolite_gas": -1.0,
+            "hetonite_gas": 60.0,
+            "xiragen": 30.0,
+            "pyrrolite_gas": -30.0,
         },
         0.0,
     )
 
     # Stable-ENV Purification Unit variants (cheaper: 1 Separator Core
-    # instead of 2, gated on Stable ENV instead of unconstrained).
+    # instead of 2, gated on Stable ENV instead of unconstrained). Same
+    # capacity-scaling convention as gas_reactor_globe_alloc/_run above.
     f["purification_heavy_xiragen_stable_alloc"] = make_formula(
         {
             "stable_env_allowance": 1.0,
-            "purification_hx_stable_capacity": -30.0,
+            "purification_hx_stable_capacity": -1.0,
         },
         0.0,
         integer=True,
@@ -1510,16 +1579,16 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
     f["purification_heavy_xiragen_stable_run"] = make_formula(
         {
             "purification_hx_stable_capacity": 1.0,
-            "xiragen": 2.0,
-            "separator_core": 1.0,
-            "heavy_xiragen": -1.0,
+            "xiragen": 60.0,
+            "separator_core": 30.0,
+            "heavy_xiragen": -30.0,
         },
         0.0,
     )
     f["purification_hetonite_gas_stable_alloc"] = make_formula(
         {
             "stable_env_allowance": 1.0,
-            "purification_hg_stable_capacity": -30.0,
+            "purification_hg_stable_capacity": -1.0,
         },
         0.0,
         integer=True,
@@ -1527,9 +1596,9 @@ def build_formulas(config: WulingConfig1p4) -> dict[str, Formula]:
     f["purification_hetonite_gas_stable_run"] = make_formula(
         {
             "purification_hg_stable_capacity": 1.0,
-            "cuprium_gas": 2.0,
-            "separator_core": 1.0,
-            "hetonite_gas": -1.0,
+            "cuprium_gas": 60.0,
+            "separator_core": 30.0,
+            "hetonite_gas": -30.0,
         },
         0.0,
     )
