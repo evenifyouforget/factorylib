@@ -274,63 +274,61 @@ RESOURCE_LABELS = {
         "Purification Unit Hetonite Gas (Stable ENV) Capacity"
     ),
     "gas_reactor_globe_capacity": "Gas Reactor Globe Capacity",
-    "fluid_gas_aquagen_capacity": "Fluid-Gas Transmuting Unit (Aquagen) Capacity",
-    "fluid_gas_aquagen_reverse_capacity": (
-        "Fluid-Gas Transmuting Unit (Aquagen, reverse) Capacity"
-    ),
-    "fluid_gas_xiragen_capacity": "Fluid-Gas Transmuting Unit (Xiragen) Capacity",
+    # Every _THRESHOLD_RECIPES capacity below is named after what it
+    # actually converts (X -> Y Threshold Activations), not a generic
+    # "(Building) (Item[, reverse]) Capacity" template -- confirmed with
+    # the user the old template was confusing (couldn't tell what a
+    # "reverse" capacity actually did without cross-referencing the
+    # formula itself). Matches each pair's own FORMULA_LABELS text above.
+    "fluid_gas_aquagen_capacity": "Water → Aquagen Threshold Activations",
+    "fluid_gas_aquagen_reverse_capacity": "Aquagen → Water Threshold Activations",
+    "fluid_gas_xiragen_capacity": ("Liquid Xiranite → Xiragen Threshold Activations"),
     "fluid_gas_xiragen_reverse_capacity": (
-        "Fluid-Gas Transmuting Unit (Xiragen, reverse) Capacity"
+        "Xiragen → Liquid Xiranite Threshold Activations"
     ),
     "fluid_gas_cuprium_gas_capacity": (
-        "Fluid-Gas Transmuting Unit (Cuprium Gas) Capacity"
+        "Cuprium Solution → Cuprium Gas Threshold Activations"
     ),
     "fluid_gas_cuprium_gas_reverse_capacity": (
-        "Fluid-Gas Transmuting Unit (Cuprium Gas, reverse) Capacity"
+        "Cuprium Gas → Cuprium Solution Threshold Activations"
     ),
-    "fluid_gas_acridgen_capacity": "Fluid-Gas Transmuting Unit (Acridgen) Capacity",
-    "fluid_gas_acridgen_reverse_capacity": (
-        "Fluid-Gas Transmuting Unit (Acridgen, reverse) Capacity"
-    ),
+    "fluid_gas_acridgen_capacity": "Acid → Acridgen Threshold Activations",
+    "fluid_gas_acridgen_reverse_capacity": "Acridgen → Acid Threshold Activations",
     "fluid_gas_heavy_xiragen_capacity": (
-        "Fluid-Gas Transmuting Unit (Heavy Xiragen) Capacity"
+        "Liquid Heavy Xiranite → Heavy Xiragen Threshold Activations"
     ),
     "fluid_gas_heavy_xiragen_reverse_capacity": (
-        "Fluid-Gas Transmuting Unit (Heavy Xiragen, reverse) Capacity"
+        "Heavy Xiragen → Liquid Heavy Xiranite Threshold Activations"
     ),
     "fluid_gas_hetonite_gas_capacity": (
-        "Fluid-Gas Transmuting Unit (Hetonite Gas) Capacity"
+        "Hetonite Solution → Hetonite Gas Threshold Activations"
     ),
     "fluid_gas_hetonite_gas_reverse_capacity": (
-        "Fluid-Gas Transmuting Unit (Hetonite Gas, reverse) Capacity"
+        "Hetonite Gas → Hetonite Solution Threshold Activations"
     ),
-    "solid_gas_xiragen_capacity": "Solid-Gas Transmuting Unit (Xiragen) Capacity",
-    "solid_gas_xiragen_reverse_capacity": (
-        "Solid-Gas Transmuting Unit (Xiragen, reverse) Capacity"
-    ),
+    "solid_gas_xiragen_capacity": "Xiranite → Xiragen Threshold Activations",
+    "solid_gas_xiragen_reverse_capacity": ("Xiragen → Xiranite Threshold Activations"),
     "solid_gas_heavy_xiragen_capacity": (
-        "Solid-Gas Transmuting Unit (Heavy Xiragen) Capacity"
+        "Heavy Xiranite → Heavy Xiragen Threshold Activations"
     ),
     "solid_gas_heavy_xiragen_reverse_capacity": (
-        "Solid-Gas Transmuting Unit (Heavy Xiragen, reverse) Capacity"
+        "Heavy Xiragen → Heavy Xiranite Threshold Activations"
     ),
-    "solid_gas_cuprium_gas_capacity": (
-        "Solid-Gas Transmuting Unit (Cuprium Gas) Capacity"
-    ),
+    "solid_gas_cuprium_gas_capacity": ("Cuprium → Cuprium Gas Threshold Activations"),
     "solid_gas_cuprium_gas_reverse_capacity": (
-        "Solid-Gas Transmuting Unit (Cuprium Gas, reverse) Capacity"
+        "Cuprium Gas → Cuprium Threshold Activations"
     ),
     "solid_gas_hetonite_gas_capacity": (
-        "Solid-Gas Transmuting Unit (Hetonite Gas) Capacity"
+        "Hetonite → Hetonite Gas Threshold Activations"
     ),
     "solid_gas_hetonite_gas_reverse_capacity": (
-        "Solid-Gas Transmuting Unit (Hetonite Gas, reverse) Capacity"
+        "Hetonite Gas → Hetonite Threshold Activations"
     ),
     "solid_gas_pyrrolite_gas_capacity": (
-        "Solid-Gas Transmuting Unit (Pyrrolite Gas) Capacity"
+        "Pyrrolite → Pyrrolite Gas Threshold Activations"
     ),
     "solid_gas_pyrrolite_gas_reverse_capacity": (
-        "Solid-Gas Transmuting Unit (Pyrrolite Gas, reverse) Capacity"
+        "Pyrrolite Gas → Pyrrolite Threshold Activations"
     ),
 }
 

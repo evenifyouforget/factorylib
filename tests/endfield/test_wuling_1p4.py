@@ -7,6 +7,7 @@ from factorylib.endfield.wuling_1p4 import (
     _THRESHOLD_RECIPES,
     FORMULA_WATTS,
     GOOD_YIELD,
+    RESOURCE_LABELS,
     RESOURCE_NAMES,
     WulingConfig1p4,
     _default_base_supply,
@@ -868,3 +869,25 @@ def test_scaling_fix_does_not_change_the_true_optimal_dollar_value():
     show up as a $ change here."""
     result, _ = search(WulingConfig1p4())
     assert result.dollar_output == pytest.approx(606727 / 250)
+
+
+def test_threshold_capacity_labels_name_the_actual_conversion_direction():
+    """Regression for the generic "(Building) (Item[, reverse]) Capacity"
+    template being confusing (user-reported: couldn't tell what a
+    "reverse" capacity actually converts without cross-referencing the
+    formula itself) -- every _THRESHOLD_RECIPES capacity label must now
+    be "X -> Y Threshold Activations" naming its own real conversion,
+    and a forward/reverse pair must be exact mirror images of each
+    other."""
+    assert (
+        RESOURCE_LABELS["fluid_gas_aquagen_capacity"]
+        == "Water → Aquagen Threshold Activations"
+    )
+    assert (
+        RESOURCE_LABELS["fluid_gas_aquagen_reverse_capacity"]
+        == "Aquagen → Water Threshold Activations"
+    )
+    for name, *_ in _THRESHOLD_RECIPES:
+        label = RESOURCE_LABELS[f"{name}_capacity"]
+        assert "Threshold Activations" in label
+        assert " → " in label
