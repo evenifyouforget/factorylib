@@ -940,3 +940,81 @@ introduced/changed this session that had none before:
 
 Full suite (3146+ tests) passing, `ruff check`/`ruff format --check`
 clean after these additions.
+
+## Real bug found and fixed: "1 multiple" wasn't the recipe's real /min rate
+
+User-reported: "Forge of the Sky, Stable ENV: 1/min Carbon + 1/min Water
+→ 1/min Xiranite" was wrong -- the real recipe is "every 2 seconds" =
+30/min at full building utilization. Root cause: every threshold
+recipe's `{name}_run`, `xi_forge_run`/`xi_forge_stable_env_run`,
+`gas_reactor_globe_run`, the two Stable-ENV Purification Unit variants,
+and every plain new-1.4 recipe (fitting_unit/moulding_unit/
+gearing_unit/filling_unit_*/packaging_unit/
+reactor_crucible_liquid_heavy_xiranite/purification_heavy_xiragen/
+purification_hetonite_gas) left "1 multiple" at the raw per-cycle item
+count instead of the real per-building rate -- inconsistent with every
+other production formula's "1 multiple = 1 building" convention (e.g.
+1.2e's own hx_make: "60 Xiranite -> 6 Heavy Xiranite"). Fixed by
+minting exactly 1 unit of capacity per alloc-building (was max_rate
+units) and scaling each run/plain formula's consumption by max_rate (30
+for "every 2 seconds", 6 for "every 10 seconds") to match -- verified
+by hand this is a pure change of variables (same threshold_good-per-
+output ratio either way), confirmed empirically the full suite stayed
+green with zero assertion changes (no $-optimal figure moved).
+FORMULA_WATTS, GOOD_YIELD, pp_goals_1p4's `_COMPONENT_FLOW_CONTRIBUTORS`,
+and every affected FORMULA_LABELS entry updated to match. Regression
+tests added in `test_wuling_1p4.py`.
+
+Also renamed every `_THRESHOLD_RECIPES` capacity's RESOURCE_LABELS entry
+from the generic "(Building) (Item[, reverse]) Capacity" template (e.g.
+"Fluid-Gas Transmuting Unit (Aquagen, reverse) Capacity", which didn't
+say what it actually converts) to "X → Y Threshold Activations" (e.g.
+"Aquagen → Water Threshold Activations"), naming the real conversion
+direction directly.
+
+## CLI output rewritten as Markdown
+
+User request: the tab/indent report "looks bad when pasted elsewhere."
+Rewrote `cli.py`'s entire report as Markdown -- `##` headers for major
+sections (Optimal solution, Material balance, Tied alternatives, Most
+fit solution found, Delivery job prediction), `###` for each
+Alternative/Refined solution sub-block, nested `"- "` bullets
+(`_bullet(depth, text)` helper) for everything else instead of raw
+tab-stop indentation. `_format_result`/`_format_income_breakdown`/
+`_format_material_balance` all take an explicit `header_level`/`depth`
+now. All ~46 test_cli.py tests updated to the new format (mostly
+substring assertions that didn't need to change; two needed the
+"### Refined solution" \\n "dollar = ..." two-line structure instead
+of the old single-line "Refined solution: dollar=...").
+
+## Inergen/Xiragen base supply bumped (data sheet update)
+
+kaneko_1p4_data_sheet.md's "New Max Raw Material Income" revised
+Inergen from "at least 260/min" to "at least 460/min" and Xiragen from
+30/min to 100/min (Cuprium Ore's 420 was already current). Updated
+`DEFAULT_INERGEN`/`DEFAULT_XIRAGEN` in wuling_1p4.py to match. This
+shifted the default scenario's own $-optimal figure ($2171.10 ->
+$2426.9080, `606727/250`) and, separately, made the Forge-of-the-Sky
+Carbon-sourcing tie no longer reproducible from the DEFAULT scenario
+even with `power_dollar_tax=False` (the much larger Inergen/Xiragen
+supply gives the all-Stable-ENV route an independent, non-tax reason to
+win outright) -- `test_power_dollar_tax_disabled_restores_old_tie` now
+constructs a reduced-supply config explicitly (Inergen=260, Xiragen=30)
+to keep exercising that specific tie in isolation.
+
+## tmp_notes cleanup
+
+Deleted 4 fully-superseded scratch files (contents already absorbed
+into this file's own narrative, and none cited by source code):
+`future_work.md` (SA-replacement modularity requirement, see "Carried-
+over / deferred scope" above), `clarification_delivery.md` (delivery
+box capacity 14k->12k, already applied), `adjust_power_curve.md`
+(power hard-cap retune, already applied), `sample_out.md` (a stale CLI
+output capture, obsolete after the $ figure and format changed twice
+since it was written). Kept everything still cited by source code
+(`1p4_new_features.md`, `new_goals.md`, `old_prompt.md`,
+`flexible_gear_crafting.md`, `power_consumption.md`,
+`make_plants_not_free.md`) plus live/unresolved notes
+(`investigation_questions.md`, `clarification_dollar_goal.md` -- the
+latter explicitly says "this is still not the final number") and the
+durable `ai_checklist_before_merge.md` checklist.
