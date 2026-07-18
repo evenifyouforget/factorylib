@@ -40,14 +40,21 @@ def test_main_prints_dollar_for_baseline_and_fitness_for_refined(capsys):
     rc = main([])
     out = capsys.readouterr().out
     assert rc == 0
-    optimal_line = next(
-        line for line in out.splitlines() if line.startswith("Optimal solution:")
+    lines = out.splitlines()
+    optimal_idx = next(
+        i for i, line in enumerate(lines) if line == "## Optimal solution"
     )
-    refined_line = next(
-        line for line in out.splitlines() if "Refined solution:" in line
+    refined_idx = next(
+        i for i, line in enumerate(lines) if line == "### Refined solution"
     )
-    assert "fitness=" not in optimal_line
-    assert "fitness=" in refined_line
+    optimal_dollar_line = next(
+        line for line in lines[optimal_idx:] if line.startswith("dollar = ")
+    )
+    refined_dollar_line = next(
+        line for line in lines[refined_idx:] if line.startswith("dollar = ")
+    )
+    assert "fitness=" not in optimal_dollar_line
+    assert "fitness=" in refined_dollar_line
     assert "Prosperity Points:" in out
 
 
@@ -512,7 +519,9 @@ def test_bad_kv_format_errors():
 
 
 def _refined_dollar(out: str) -> float:
-    match = re.search(r"Refined solution: dollar=\[\S+ = ([\d.]+)\] \$/min", out)
+    match = re.search(
+        r"### Refined solution\n\ndollar = \[\S+ = ([\d.]+)\] \$/min", out
+    )
     assert match, out
     return float(match.group(1))
 

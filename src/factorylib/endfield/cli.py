@@ -376,26 +376,28 @@ def _active_metatransfer_line(
     found by checking each metatransfer_option_i's own rate directly."""
     for i, mt in enumerate(config.metatransfers):
         if rates_by_name.get(f"metatransfer_option_{i}", 0.0) > 1e-9:
-            return f"    Metatransfer: {_format_metatransfer(mt)}"
+            return _bullet(0, f"Metatransfer: {_format_metatransfer(mt)}")
     return None
 
 
 def _goal_shortfall_warnings(
     rate: float, target: float, unit: str, goal_name: str
 ) -> list[str]:
-    """A single "Warning: ..." line if rate falls short of target (empty
-    list otherwise, or if target<=0 meaning "not a real goal"). Surfaces
-    gaps like "power target never actually hit" that would otherwise be
-    silently absent from the report -- see the CLI's own history of that
-    exact confusion. unit is glued directly to numbers with no space if
-    it starts with "/" (e.g. "/min"), space-separated otherwise (e.g. "W").
-    """
+    """A single "Warning: ..." message if rate falls short of target
+    (empty list otherwise, or if target<=0 meaning "not a real goal").
+    Surfaces gaps like "power target never actually hit" that would
+    otherwise be silently absent from the report -- see the CLI's own
+    history of that exact confusion. unit is glued directly to numbers
+    with no space if it starts with "/" (e.g. "/min"), space-separated
+    otherwise (e.g. "W"). Returns bare message text (no bullet prefix,
+    no indentation) -- callers wrap it with _bullet() at whatever depth
+    fits their own context."""
     if target <= 0 or rate >= target - 1e-9:
         return []
     pct = 100 * rate / target
     sep = "" if unit.startswith("/") else " "
     return [
-        f"  Warning: only {pct:.1f}% of the {_fmt(target)}{sep}{unit} {goal_name} "
+        f"Warning: only {pct:.1f}% of the {_fmt(target)}{sep}{unit} {goal_name} "
         f"goal is met ({_fmt(rate)}{sep}{unit} produced)"
     ]
 
@@ -415,8 +417,8 @@ def _dollar_contributions(
 
 
 def _format_income_breakdown(
-    result, formula_names: list[str], formulas: dict, stock_bill_cap: float
-) -> str:
+    result, formula_names: list[str], formulas: dict, stock_bill_cap: float, depth: int
+) -> list[str]:
     """Breaks down $/min income by sellable good: absolute $/min, % of
     total produced, % of the stock-bill-cap goal, and how much of it
     actually gets sold vs. accumulates unsold. The outpost's $ savings
@@ -424,20 +426,25 @@ def _format_income_breakdown(
     priority order (SELL_PRIORITY), not proportionally to production --
     once the cap is exhausted, lower-priority goods simply pile up
     unsold instead of being sold at a discount (see
-    factorylib.priority_sell)."""
+    factorylib.priority_sell). Returns Markdown bullet lines starting at
+    nesting level `depth` (its own header sits at `depth`, each itemized
+    good at `depth + 1`)."""
     lines = []
     total = result.dollar_output
     if stock_bill_cap > 1e-9:
         lines.append(
-            f"    {100 * total / stock_bill_cap:.1f}% of {_fmt(stock_bill_cap)} "
-            "$/min goal"
+            _bullet(
+                depth,
+                f"{100 * total / stock_bill_cap:.1f}% of {_fmt(stock_bill_cap)} "
+                "$/min goal",
+            )
         )
     contributions = _dollar_contributions(result, formula_names, formulas)
     if contributions:
         sold, unsold = allocate_by_priority(
             contributions, list(SELL_PRIORITY), stock_bill_cap
         )
-        lines.append("    Income breakdown:")
+        lines.append(_bullet(depth, "Income breakdown:"))
         for name, amount in sorted(
             contributions.items(), key=lambda kv: kv[1], reverse=True
         ):
@@ -453,19 +460,25 @@ def _format_income_breakdown(
                     f"accumulating: {_fmt(unsold[name])} $/min"
                 )
             lines.append(
-                f"        {label}: {_fmt(amount)} $/min "
-                f"({pct_of_produced:.1f}% of produced, {pct_of_goal:.1f}% of goal)"
-                f"{note}"
+                _bullet(
+                    depth + 1,
+                    f"{label}: {_fmt(amount)} $/min "
+                    f"({pct_of_produced:.1f}% of produced, {pct_of_goal:.1f}% of goal)"
+                    f"{note}",
+                )
             )
         total_unsold = sum(unsold.values())
         if total_unsold > 1e-9:
             lines.append(
-                f"        (outpost savings only regenerate at "
-                f"{_fmt(stock_bill_cap)} $/min -- {_fmt(total_unsold)} $/min "
-                "worth of goods above can't be sold yet and piles up "
-                "physically instead)"
+                _bullet(
+                    depth + 1,
+                    f"(outpost savings only regenerate at "
+                    f"{_fmt(stock_bill_cap)} $/min -- {_fmt(total_unsold)} $/min "
+                    "worth of goods above can't be sold yet and piles up "
+                    "physically instead)",
+                )
             )
-    return "\n".join(lines)
+    return lines
 
 
 def _format_result(
@@ -476,11 +489,18 @@ def _format_result(
     formulas: dict | None = None,
     stock_bill_cap: float | None = None,
     fitness_value: float | None = None,
+    header_level: int = 2,
 ) -> str:
-    header = f"{label}: dollar={_fmt_pair(result.dollar_output)} $/min"
+    """Renders one solution as a Markdown section: a `header_level`
+    header with the label, a "dollar = ..." line, then a flat bullet
+    list of every active formula (plus the income breakdown, when
+    shown)."""
+    header = f"{'#' * header_level} {label}"
+    dollar_line = f"dollar = {_fmt_pair(result.dollar_output)} $/min"
     if fitness_value is not None:
-        header += f", fitness={fitness_value:.4f}"
-    lines = [header]
+        dollar_line += f", fitness={fitness_value:.4f}"
+    lines = [header, "", dollar_line]
+    body: list[str] = []
     # Every $-earning formula already gets its own itemized line in the
     # income breakdown (amount, % produced, % of goal, sold vs.
     # accumulating) -- repeating it in the plain recipe listing below is
@@ -491,11 +511,9 @@ def _format_result(
     # to distinguish one alternative from another.
     dollar_contribution_names: frozenset[str] = frozenset()
     if formulas is not None and stock_bill_cap is not None:
-        breakdown = _format_income_breakdown(
-            result, formula_names, formulas, stock_bill_cap
+        body.extend(
+            _format_income_breakdown(result, formula_names, formulas, stock_bill_cap, 0)
         )
-        if breakdown:
-            lines.append(breakdown)
         dollar_contribution_names = frozenset(
             _dollar_contributions(result, formula_names, formulas)
         )
@@ -514,19 +532,27 @@ def _format_result(
                 extra = " (net -- nothing else in this model consumes it)"
             else:
                 extra = ""
-            lines.append(f"    {full_name}: {_fmt_pair(rate)} multiples{extra}")
+            body.append(_bullet(0, f"{full_name}: {_fmt_pair(rate)} multiples{extra}"))
     slack_parts = [
         f"{RESOURCE_LABELS.get(name, name)}={_fmt(s)}"
         for name, s in zip(RESOURCE_NAMES, result.resource_slack)
         if abs(s) > 1e-9
     ]
     if slack_parts:
-        lines.append("    slack: " + ", ".join(slack_parts))
+        body.append(_bullet(0, "slack: " + ", ".join(slack_parts)))
+    if body:
+        lines.append("")
+        lines.extend(body)
     return "\n".join(lines)
 
 
 def _format_material_balance(
-    supply: np.ndarray, rates_by_name: dict[str, float], formulas: dict
+    supply: np.ndarray,
+    rates_by_name: dict[str, float],
+    formulas: dict,
+    *,
+    title: str = "Material balance",
+    header_level: int = 2,
 ) -> str:
     """Per-resource source/sink breakdown: how much comes from the base
     supply (mining/Forge of the Sky/Metatransfer) plus which formulas
@@ -540,7 +566,13 @@ def _format_material_balance(
     multiples count a flow like "+120/min" next to a "30/min" label reads
     as a mismatch instead of the (30/min-per-multiple x 4 multiples)
     scaling it actually is."""
-    lines = ["  Material balance (net = total produced - total consumed):"]
+    lines = [
+        f"{'#' * header_level} {title}",
+        "",
+        "(net = total produced - total consumed)",
+        "",
+    ]
+    body: list[str] = []
     for k, resource_name in enumerate(RESOURCE_NAMES):
         sources = []
         sinks = []
@@ -561,14 +593,15 @@ def _format_material_balance(
             continue
         net = sum(v for _, v, _ in sources) - sum(v for _, v, _ in sinks)
         resource_label = RESOURCE_LABELS.get(resource_name, resource_name)
-        lines.append(f"    {resource_label}:")
+        body.append(_bullet(0, f"{resource_label}:"))
         for label, v, rate in sources:
             multiples = f" ({_fmt_pair(rate)} multiples)" if rate is not None else ""
-            lines.append(f"        +{_fmt_pair(v)}/min from {label}{multiples}")
+            body.append(_bullet(1, f"+{_fmt_pair(v)}/min from {label}{multiples}"))
         for label, v, rate in sinks:
             multiples = f" ({_fmt_pair(rate)} multiples)" if rate is not None else ""
-            lines.append(f"        -{_fmt_pair(v)}/min to {label}{multiples}")
-        lines.append(f"        net: {_fmt_pair(net)}/min")
+            body.append(_bullet(1, f"-{_fmt_pair(v)}/min to {label}{multiples}"))
+        body.append(_bullet(1, f"net: {_fmt_pair(net)}/min"))
+    lines.extend(body)
     return "\n".join(lines)
 
 
@@ -630,9 +663,11 @@ def main(argv: list[str] | None = None) -> int:
         config, dict(zip(best_names, best_result.formula_rates))
     )
     if metatransfer_line:
+        print()
         print(metatransfer_line)
 
     supply = full_supply(config)
+    print()
     print(
         _format_material_balance(
             supply, dict(zip(best_names, best_result.formula_rates)), formulas
@@ -680,8 +715,12 @@ def main(argv: list[str] | None = None) -> int:
         directions=directions,
     )
     if alt_result.alternatives:
-        print("\nTied alternatives (same $, different plan -- may include a")
-        print("different forge allocation or Metatransfer choice):")
+        print("\n## Tied alternatives")
+        print()
+        print(
+            "Same $, different plan -- may include a different forge allocation "
+            "or Metatransfer choice."
+        )
         for i, alt in enumerate(alt_result.alternatives, 1):
             if config.power_dollar_tax:
                 # find_alternatives computed alt.dollar_output from
@@ -697,7 +736,10 @@ def main(argv: list[str] | None = None) -> int:
                     formula_rates=alt.formula_rates,
                     resource_slack=alt.resource_slack,
                 )
-            print(_format_result(f"  Alternative {i}", alt, primary_names))
+            print()
+            print(
+                _format_result(f"Alternative {i}", alt, primary_names, header_level=3)
+            )
 
     refine_seed = random.randint(0, 2**31 - 1) if args.random_seed else args.refine_seed
     if args.random_seed:
@@ -753,31 +795,42 @@ def main(argv: list[str] | None = None) -> int:
         formula_rates=refined.rates,
         resource_slack=refined_slack,
     )
-    print(f"\nMost fit solution found (backend={args.refine_backend}):")
+    print(f"\n## Most fit solution found (backend={args.refine_backend})")
+    print()
     print(
         _format_result(
-            "  Refined solution",
+            "Refined solution",
             refined_result,
             refined.formula_names,
             formulas=formulas,
             stock_bill_cap=args.stock_bill_cap,
             fitness_value=refined.fitness,
+            header_level=3,
         )
     )
-    print(f"  Prosperity Points: {_fmt_pair(refined.pp_output)}")
+    print()
+    print(_bullet(0, f"Prosperity Points: {_fmt_pair(refined.pp_output)}"))
+    print()
     print(
         _format_material_balance(
-            pp_supply_arr, dict(zip(refined.formula_names, refined.rates)), pp_formulas
+            pp_supply_arr,
+            dict(zip(refined.formula_names, refined.rates)),
+            pp_formulas,
+            title="Material balance (refined plan)",
         )
     )
+    print()
     if refined.headroom_lost:
         lost = ", ".join(RESOURCE_LABELS.get(n, n) for n in refined.headroom_lost)
         print(
-            f"  Warning: this solution fully saturates {lost}, which had spare "
-            "capacity in the optimal solution above. This only checks the "
-            "modeled resource balance, not physical topology (splitter "
-            "wiring, priority overflow, backpressure) -- see "
-            "factorylib.endfield.goals's module docstring."
+            _bullet(
+                0,
+                f"Warning: this solution fully saturates {lost}, which had spare "
+                "capacity in the optimal solution above. This only checks the "
+                "modeled resource balance, not physical topology (splitter "
+                "wiring, priority overflow, backpressure) -- see "
+                "factorylib.endfield.goals's module docstring.",
+            )
         )
 
     rates_by_name = dict(zip(refined.formula_names, refined.rates))
@@ -787,7 +840,7 @@ def main(argv: list[str] | None = None) -> int:
     good_rates = item_rates(rates_by_name)
     power_target_label = f"{_fmt(pp_goals.power_target)} W"
     power_pct = _pct(power_rate, pp_goals.power_target, power_target_label)
-    print(f"  Power: {_fmt_pair(power_rate)} W ({power_pct})")
+    print(_bullet(0, f"Power: {_fmt_pair(power_rate)} W ({power_pct})"))
 
     # Delivery Job Quota achieved: sum of every delivery_quota_from_*
     # formula's rate (see pp_goals module docstring) -- how many boxes'
@@ -801,13 +854,13 @@ def main(argv: list[str] | None = None) -> int:
     quota_achieved = sum(quota_contributions.values())
     quota_target_label = f"{_fmt(pp_goals.delivery_jobs_per_day)} jobs/day"
     quota_pct = _pct(quota_achieved, pp_goals.delivery_jobs_per_day, quota_target_label)
-    print(f"  Delivery quota: {_fmt_pair(quota_achieved)} ({quota_pct})")
+    print(_bullet(0, f"Delivery quota: {_fmt_pair(quota_achieved)} ({quota_pct})"))
     for name, rate in sorted(
         quota_contributions.items(), key=lambda kv: kv[1], reverse=True
     ):
         resource_name = name.removeprefix("delivery_quota_from_")
         label = RESOURCE_LABELS.get(resource_name, resource_name)
-        print(f"      {label}: {_fmt_pair(rate)} quota")
+        print(_bullet(1, f"{label}: {_fmt_pair(rate)} quota"))
 
     for warning in (
         _goal_shortfall_warnings(
@@ -818,7 +871,7 @@ def main(argv: list[str] | None = None) -> int:
             quota_achieved, pp_goals.delivery_jobs_per_day, "jobs/day", "delivery quota"
         )
     ):
-        print(warning)
+        print(_bullet(0, warning))
 
     # Gear Components have no real "100%" target in the pp system (a
     # Nonzero Production Goal -- see pp_goals.nonzero_production_tiers):
@@ -854,11 +907,11 @@ def main(argv: list[str] | None = None) -> int:
         rate = good_rates.get(good_name, 0.0)
         target_label = f"{_fmt(_GEAR_MIN_TARGET_REFERENCE)}/min"
         pct = _pct(rate, _GEAR_MIN_TARGET_REFERENCE, target_label)
-        print(f"  {label}: {_fmt_pair(rate)}/min ({pct})")
+        print(_bullet(0, f"{label}: {_fmt_pair(rate)}/min ({pct})"))
         for warning in _goal_shortfall_warnings(
             rate, _GEAR_MIN_TARGET_REFERENCE, "/min", f"{label} gear"
         ):
-            print(warning)
+            print(_bullet(1, warning))
 
     delivery_config = DeliverySimConfig(
         startup_days=args.delivery_startup_days,
@@ -900,35 +953,41 @@ def main(argv: list[str] | None = None) -> int:
         )
     delivery_result = simulate_delivery_selections(accumulating, delivery_config)
     tally = delivery_result.tally
+    print("\n## Delivery job prediction")
+    print()
     print(
-        f"\nDelivery job prediction ({delivery_config.simulation_days} days, "
+        f"{delivery_config.simulation_days} days, "
         f"{delivery_config.jobs_per_day} jobs/day, "
         f"{_fmt(delivery_config.box_capacity)}/job, depot cap "
         f"{_fmt(delivery_config.depot_capacity)}, after "
-        f"{_fmt(delivery_config.startup_days)}-day startup): what a "
-        "material's rate meets a target doesn't mean it's what gets picked --"
-        " this simulates the depot's actual highest-amount auto-select "
-        "(ties broken randomly)."
+        f"{_fmt(delivery_config.startup_days)}-day startup: what a "
+        "material's rate meets a target doesn't mean it's what gets picked -- "
+        "this simulates the depot's actual highest-amount auto-select (ties "
+        "broken randomly)."
     )
+    print()
     if tally:
         total_jobs = sum(tally.values()) + delivery_result.failed_jobs
         for name, count in sorted(tally.items(), key=lambda kv: kv[1], reverse=True):
             if count > 0:
                 pct = 100 * count / total_jobs if total_jobs > 0 else 0.0
-                print(f"    {name}: selected {count} times ({pct:.1f}%)")
+                print(_bullet(0, f"{name}: selected {count} times ({pct:.1f}%)"))
         never_selected = [name for name, count in tally.items() if count == 0]
         if never_selected:
-            print(f"    (never selected: {', '.join(never_selected)})")
+            print(_bullet(0, f"(never selected: {', '.join(never_selected)})"))
     else:
-        print("    (nothing accumulates unconsumed in the depot)")
+        print(_bullet(0, "(nothing accumulates unconsumed in the depot)"))
     if delivery_result.failed_jobs > 0:
         total_jobs = sum(tally.values()) + delivery_result.failed_jobs
         pct = 100 * delivery_result.failed_jobs / total_jobs
         print(
-            f"  Warning: failed to pack goods due to insufficient materials on "
-            f"{delivery_result.failed_jobs} of {total_jobs} simulated jobs "
-            f"({pct:.1f}%) -- no material had accumulated the "
-            f"{_fmt(delivery_config.box_capacity)} needed to fill a box"
+            _bullet(
+                0,
+                f"Warning: failed to pack goods due to insufficient materials on "
+                f"{delivery_result.failed_jobs} of {total_jobs} simulated jobs "
+                f"({pct:.1f}%) -- no material had accumulated the "
+                f"{_fmt(delivery_config.box_capacity)} needed to fill a box",
+            )
         )
 
     diagram_path = None if args.no_diagram else args.diagram or _default_diagram_path()
