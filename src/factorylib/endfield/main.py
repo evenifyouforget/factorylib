@@ -113,7 +113,7 @@ def optimize(all_materials, all_recipes, material_to_maximize):
     # Get all recipes
     num_recipes = len(all_recipes)
     # Get the complete list of all materials, including recipe counters
-    all_materials = list(set(all_materials) | gather_materials(all_recipes))
+    all_materials = sorted(set(all_materials) | gather_materials(all_recipes))
     num_materials = len(all_materials)
     # Assign each material a unit basis vector
     subs_dict = {}
@@ -166,6 +166,7 @@ def optimize(all_materials, all_recipes, material_to_maximize):
                 continue
             contribution = multiples * per_multiple
             bits[j].append(f'- {contribution}{material.unit} from {multiples} multiples of {recipe.name}')
+    bits.sort()
     print('\n'.join(map('\n'.join, bits)))
 
 def test_main():
@@ -470,6 +471,18 @@ def main():
     std_thermal(1.5 * LCWulingBattery, 1600 * Watt)
     std_thermal(1.5 * SCWulingBattery, 3200 * Watt)
     std_sell = std_building('Sell', 0)
+    std_sell(Xiranite, WulingStockBill)
+    std_sell(CupriumPart, WulingStockBill)
+    std_sell(SeparatorCore, WulingStockBill)
+    std_sell(YazhenSyringeC, 16 * WulingStockBill)
+    std_sell(JincaoDrink, 16 * WulingStockBill)
+    std_sell(YazhenSyringeA, 22 * WulingStockBill)
+    std_sell(JincaoTea, 22 * WulingStockBill)
+    std_sell(LCWulingBattery, 25 * WulingStockBill)
+    std_sell(HeavyXiranite, 27 * WulingStockBill)
+    std_sell(HetonitePart, 48 * WulingStockBill)
     std_sell(SCWulingBattery, 54 * WulingStockBill)
     std_sell(PyrrolitePart, 70 * WulingStockBill)
+    std_test_area = std_building('Test Area Purification Node', 0)
+    std_test_area(30 * Sewage, XirconEffluent, max_multiples=12)
     optimize(set(), all_recipes, WulingStockBill)
