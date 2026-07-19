@@ -428,7 +428,7 @@ def main():
     std_reactor(60 * HetoniteSolution + 30 * FerriumPowder, 30 * Hetonite + 30 * Sewage)
     std_forge = std_building('Forge of the Sky', 50)
     std_forge(60 * StabilizedCarbon + 30 * Water, 30 * Xiranite, integer_inputs=ForgeAllocation)
-    std_forge(60 * Xiranite + 30 * XirconEffluent, 30 * HeavyXiranite, integer_inputs=ForgeAllocation)
+    std_forge(60 * Xiranite + 30 * XirconEffluent, 6 * HeavyXiranite, integer_inputs=ForgeAllocation)
     std_forge(30 * Carbon + 30 * Water, 30 * Xiranite, integer_inputs=ForgeAllocation + StableENV)
     std_purify = std_building('Purification Unit', 50)
     std_purify(60 * Xiragen + 60 * SeparatorCore, 30 * HeavyXiragen)
