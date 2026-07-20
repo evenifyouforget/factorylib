@@ -318,6 +318,17 @@ def main():
             all_recipes.append(Recipe(-counter_inputs + counter, name=f'Assign Allocation: {name}', integer_only=True))
             all_recipes.append(Recipe(-counter - inputs + outputs, name=name, max_multiples=max_multiples, integer_only=integer_only))
         return make_recipe
+    for metatransfer_option in [ # non-exhaustive list
+        1500/60 * OriginiumOre,
+        1500/60 * AmethystOre,
+        1500/60 * DenseOriginiumPowder,
+        1500/60 * FerriumOre,
+        1500/60/2 * Steel,
+        1500/60/50 * HCValleyBattery,
+        1500/60/20 * SCValleyBattery,
+        1500/60/20 * LCValleyBattery,
+        ]:
+        all_recipes.append(Recipe(-MetatransferAllocation + metatransfer_option, f'Choose Metatransfer: {metatransfer_option}', integer_only=True))
     std_pump = std_building('Fluid Pump', 10)
     std_pump(0, 60 * Water)
     std_pump2 = std_building('Acid Resistant Pump Mk II', 20)
