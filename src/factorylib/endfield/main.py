@@ -4,6 +4,7 @@ import numpy as np
 from numpy import inf
 from scipy.optimize import Bounds, LinearConstraint, milp
 from fractions import Fraction
+import textwrap
 
 _unique_counter = 0
 
@@ -16,6 +17,7 @@ _EPS = 1e-12
 FRACTION_PREMULTIPLY = 12
 FRACTION_LIMIT_DENOM = 8
 DECREMENT = 1 / FRACTION_PREMULTIPLY / FRACTION_LIMIT_DENOM ** 2
+LABEL_WIDTH = 40
 
 class Fraction2(Fraction):
     """
@@ -221,6 +223,9 @@ def gather_materials(expr):
         return set()
     return expr.gather_materials()
 
+def wrap_label(text):
+    return "\n".join([textwrap.fill(line, width=LABEL_WIDTH) for line in text.splitlines()])
+
 def optimize(all_materials, all_recipes, material_to_maximize, force_fractions=False, graph_outfile=None):
     # Get all recipes
     num_recipes = len(all_recipes)
@@ -274,7 +279,7 @@ def optimize(all_materials, all_recipes, material_to_maximize, force_fractions=F
     node_names = {}
     hidden_node_mats = set()
     if graph_outfile:
-        dot = graphviz.Digraph(engine='sfdp')
+        dot = graphviz.Digraph(engine='sfdp', graph_attr={'overlap_scaling': '-10'})
         for i, material in enumerate(all_materials):
             node_names[material] = inode_name = f'material{i}'
             iplus = plus_amount[i]
@@ -283,7 +288,7 @@ def optimize(all_materials, all_recipes, material_to_maximize, force_fractions=F
                 hidden_node_mats.add(material)
                 continue
             isub = iplus - inet
-            dot.node(inode_name, f'{material}\n+{iplus}{material.unit} - {isub}{material.unit}\n={inet}{material.unit}')
+            dot.node(inode_name, wrap_label(f'{material}\n\n+{iplus}{material.unit} - {isub}{material.unit}\n\n={inet}{material.unit}'))
     bits = [[f'### {material.name} (net {net}{material.unit})'] for material, net in zip(all_materials, net_amount)]
     for i, multiples in enumerate(all_recipes_multiples):
         if multiples == 0:
@@ -292,7 +297,7 @@ def optimize(all_materials, all_recipes, material_to_maximize, force_fractions=F
         nodef = None
         if dot:
             inode_name = f'recipe{i}'
-            nodef = (inode_name, f'{recipe.name}\n{recipe.nice_expression_str()}\n{multiples} multiples')
+            nodef = (inode_name, wrap_label(f'{recipe.name}\n\n{multiples} multiples'))
         edgefs = []
         for j, material in enumerate(all_materials):
             per_multiple = recipe_matrix[i,j]
@@ -463,8 +468,10 @@ def main():
     all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 100 * Xiragen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
     def std_building(building_name, power):
         def make_recipe(inputs, outputs, /, max_multiples=inf, integer_only=False, integer_inputs=None):
-            name = f'{building_name} ({power} W): {inputs} --> {outputs}'
-            counter = std_alloc(name, additional_tags=HIDDEN)
+            power_str = f' ({power} W)' if power else ''
+            name = f'{building_name}{power_str}: {inputs} --> {outputs}'
+            additional_tags = '' if integer_inputs else HIDDEN
+            counter = std_alloc(name, additional_tags=additional_tags)
             counter_inputs = power * Watt
             if integer_inputs:
                 counter_inputs = counter_inputs + integer_inputs
@@ -499,7 +506,7 @@ def main():
     std_refine(30 * DenseOriginiumPowder, 30 * DenseOrigocrustPowder)
     std_refine(30 * Buckflower, 30 * Carbon)
     std_refine(30 * Sandleaf, 30 * Carbon)
-    std_refine(30 * Jincao, 60 * Carbon)
+    #std_refine(30 * Jincao, 60 * Carbon)
     std_refine(30 * Yazhen, 60 * Carbon)
     std_shred = std_building('Shredding Unit', 5)
     std_shred(30 * Cuprium, 30 * CupriumPowder)
