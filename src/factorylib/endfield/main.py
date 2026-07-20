@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 from numpy import inf
 from scipy.optimize import Bounds, LinearConstraint, milp
@@ -10,7 +11,7 @@ LIQUID = 'L'
 GAS = 'G'
 VIRTUAL = 'V'
 _EPS = 1e-12
-FRACTION_PREMULTIPLY = 120
+FRACTION_PREMULTIPLY = 12
 FRACTION_LIMIT_DENOM = 8
 DECREMENT = 1 / FRACTION_PREMULTIPLY / FRACTION_LIMIT_DENOM ** 2
 
@@ -23,15 +24,15 @@ class Fraction2(Fraction):
         as_float = float(self)
         return f'[{as_fraction} = {as_float}]'
 
-def find_close_fraction(x, force=False, allow_greater=False, allow_negative=False):
+def find_close_fraction(x, force_fractions=False, allow_greater=False, allow_negative=False):
     """
-    force=False mode: try to find a close fraction, or else return the original value.
-    force=True mode: always returns a fraction, subject to constraints.
+    force_fractions=False mode: try to find a close fraction, or else return the original value.
+    force_fractions=True mode: always returns a fraction, subject to constraints.
     """
     def round_to_fraction(x):
         return Fraction2(Fraction2(x * FRACTION_PREMULTIPLY).limit_denominator(FRACTION_LIMIT_DENOM) / FRACTION_PREMULTIPLY)
     x_as_frac = round_to_fraction(x)
-    if not force:
+    if not force_fractions:
         if np.isclose(x_as_frac, x, rtol=_EPS, atol=_EPS):
             return x_as_frac
         return x
@@ -142,7 +143,7 @@ def gather_materials(expr):
         return set()
     return expr.gather_materials()
 
-def optimize(all_materials, all_recipes, material_to_maximize):
+def optimize(all_materials, all_recipes, material_to_maximize, force_fractions=False):
     # Get all recipes
     num_recipes = len(all_recipes)
     # Get the complete list of all materials, including recipe counters
@@ -183,7 +184,7 @@ def optimize(all_materials, all_recipes, material_to_maximize):
     print(f'- Maximized score: {-res.fun}')
     print('## Recipes Used')
     all_recipes_multiples = res.x
-    all_recipes_multiples = np.array([find_close_fraction(x) for x in all_recipes_multiples], dtype=object)
+    all_recipes_multiples = np.array([find_close_fraction(x, force_fractions=force_fractions) for x in all_recipes_multiples], dtype=object)
     for i, multiples in enumerate(all_recipes_multiples):
         if multiples == 0:
             continue
@@ -217,6 +218,9 @@ def test_main():
     optimize(all_materials, all_recipes, FOOBARIUM)
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', '--force-fractions', action='store_true', help='Forces all printed quantities to be an exact fraction, even if the original quantity may not be near any simple fraction. Results in an approximately satisfiable solution that is easier to build.')
+    args = parser.parse_args()
     PMIN = '/min'
     WulingStockBill = Material(name='$', unit=PMIN, tags=VIRTUAL)
     Watt = Material(name='W', tags=VIRTUAL)
@@ -530,5 +534,5 @@ def main():
     std_sell(SCWulingBattery, 54 * WulingStockBill)
     std_sell(PyrrolitePart, 70 * WulingStockBill)
     std_test_area = std_building('Test Area Purification Node', 0)
-    std_test_area(30 * Sewage, XirconEffluent, max_multiples=12)
-    optimize(set(), all_recipes, WulingStockBill)
+    #std_test_area(30 * Sewage, XirconEffluent, max_multiples=12)
+    optimize(set(), all_recipes, WulingStockBill, force_fractions=args.force_fractions)
