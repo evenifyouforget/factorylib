@@ -1,6 +1,7 @@
 import numpy as np
 from numpy import inf
 from scipy.optimize import Bounds, LinearConstraint, milp
+from fractions import Fraction
 
 _unique_counter = 0
 
@@ -8,7 +9,39 @@ SOLID = 'S'
 LIQUID = 'L'
 GAS = 'G'
 VIRTUAL = 'V'
+_EPS = 1e-12
+FRACTION_PREMULTIPLY = 120
+FRACTION_LIMIT_DENOM = 8
+DECREMENT = 1 / FRACTION_PREMULTIPLY / FRACTION_LIMIT_DENOM ** 2
 
+class Fraction2(Fraction):
+    """
+    Fraction with customized printing
+    """
+    def __str__(self):
+        as_fraction = Fraction.__str__(self)
+        as_float = float(self)
+        return f'[{as_fraction} = {as_float}]'
+
+def find_close_fraction(x, force=False, allow_greater=False, allow_negative=False):
+    """
+    force=False mode: try to find a close fraction, or else return the original value.
+    force=True mode: always returns a fraction, subject to constraints.
+    """
+    def round_to_fraction(x):
+        return Fraction2(Fraction2(x * FRACTION_PREMULTIPLY).limit_denominator(FRACTION_LIMIT_DENOM) / FRACTION_PREMULTIPLY)
+    x_as_frac = round_to_fraction(x)
+    if not force:
+        if np.isclose(x_as_frac, x, rtol=_EPS, atol=_EPS):
+            return x_as_frac
+        return x
+    x_modified = x
+    while not allow_greater and x_as_frac >= x + _EPS:
+        x_modified -= DECREMENT
+        if not allow_negative and x_modified < 0:
+            return Fraction2(0)
+        x_as_frac = round_to_fraction(x_modified)
+    return x_as_frac
 class Material(object):
     def __init__(self, _id=None, name=None, unit='', tags=None):
         global _unique_counter
@@ -149,14 +182,16 @@ def optimize(all_materials, all_recipes, material_to_maximize):
     print(f'# Result {res.status}: ' + res.message)
     print(f'- Maximized score: {-res.fun}')
     print('## Recipes Used')
-    for i, multiples in enumerate(res.x):
+    all_recipes_multiples = res.x
+    all_recipes_multiples = np.array([find_close_fraction(x) for x in all_recipes_multiples], dtype=object)
+    for i, multiples in enumerate(all_recipes_multiples):
         if multiples == 0:
             continue
         print(f'- {multiples} multiples of {all_recipes[i].name}')
     print('## Balance Sheet Per Material')
-    net_amount = recipe_matrix.T @ res.x
+    net_amount = recipe_matrix.T @ all_recipes_multiples
     bits = [[f'### {material.name} (net {net}{material.unit})'] for material, net in zip(all_materials, net_amount)]
-    for i, multiples in enumerate(res.x):
+    for i, multiples in enumerate(all_recipes_multiples):
         if multiples == 0:
             continue
         recipe = all_recipes[i]
