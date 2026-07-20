@@ -220,9 +220,10 @@ def test_main():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--force-fractions', action='store_true', help='Forces all printed quantities to be an exact fraction, even if the original quantity may not be near any simple fraction. Results in an approximately satisfiable solution that is easier to build.')
+    parser.add_argument('-t', '--target', choices=['sellable', 'mixed'], help='Which goal to optimize for')
     args = parser.parse_args()
     PMIN = '/min'
-    WulingStockBill = Material(name='$', unit=PMIN, tags=VIRTUAL)
+    goal_material = WulingStockBill = Material(name='$', unit=PMIN, tags=VIRTUAL)
     Watt = Material(name='W', tags=VIRTUAL)
     def std_alloc(name):
         return Material(name=f'Allocation: {name}', tags=VIRTUAL)
@@ -535,4 +536,59 @@ def main():
     std_sell(PyrrolitePart, 70 * WulingStockBill)
     std_test_area = std_building('Test Area Purification Node', 0)
     #std_test_area(30 * Sewage, XirconEffluent, max_multiples=12)
-    optimize(set(), all_recipes, WulingStockBill, force_fractions=args.force_fractions)
+    if args.target == 'mixed':
+        goal_material = PerformancePoint = Material(name='pp', tags=VIRTUAL)
+        def pp_satisfaction(target_mat, mat_amount, pp_worth):
+            target_expr = mat_amount * target_mat
+            First100Percent = std_alloc(f'First 100% of {target_expr}')
+            std_pt = std_building(f'Award Points For {target_mat}', 0)
+            std_pt(target_expr, First100Percent, max_multiples=1)
+            std_pt(First100Percent, pp_worth * 0.1 * PerformancePoint)
+            std_pt(First100Percent, pp_worth * 0.8 * PerformancePoint, integer_only=True)
+            # N segments with same output but different input
+            # smallest input one is the best and will be taken first
+            N_SEGMENTS = 30
+            R = 0.85
+            for i in range(N_SEGMENTS):
+                std_pt(mat_amount * R ** i * target_mat, pp_worth * 0.2 / N_SEGMENTS * PerformancePoint, max_multiples=1)
+        pp_satisfaction(WulingStockBill, 1500, 10000)
+        # since the factory already covers its own power cost, the power goal is only for additional buildings
+        pp_satisfaction(Watt, 2000, 10000)
+        def pp_nonzero(target_mat, mat_amount, pp_worth):
+            std_pt = std_building(f'Award Points For {target_mat}', 0)
+            # N segments with same output but different input
+            # smallest input one is the best and will be taken first
+            N_SEGMENTS = 100
+            R = 1.1
+            in_amounts = [R ** i for i in range(N_SEGMENTS)]
+            mul = mat_amount / sum(in_amounts[:N_SEGMENTS//2])
+            for i in range(N_SEGMENTS):
+                std_pt(mul * in_amounts[i] * target_mat, pp_worth / N_SEGMENTS * PerformancePoint, max_multiples=1)
+        CraftingPoint = []
+        for i in range(4):
+            CraftingPoint.append(Material(name=f'Wuling Tier {i+1} Gear', unit=PMIN, tags=VIRTUAL))
+        std_craft = std_building('Gear Crafting', 0)
+        std_craft(50 * XiraniteComponent, CraftingPoint[0])
+        std_craft(50 * CupriumComponent, CraftingPoint[1])
+        std_craft(50 * HetoniteComponent, CraftingPoint[2])
+        std_craft(50 * PyrroliteComponent, CraftingPoint[3])
+        std_craft(CraftingPoint[1], CraftingPoint[0])
+        std_craft(CraftingPoint[2], 5 * CraftingPoint[1])
+        std_craft(CraftingPoint[3], 2 * CraftingPoint[2])
+        pp_nonzero(CraftingPoint[0], 0.5, 100)
+        pp_nonzero(CraftingPoint[1], 0.5, 100)
+        pp_nonzero(CraftingPoint[2], 0.25, 100)
+        pp_nonzero(CraftingPoint[3], 0.25, 200)
+        pp_nonzero(CupriumCanister, 1, 200)
+        pp_nonzero(CupriumPart, 0.5, 100)
+        pp_nonzero(HetonitePart, 0.5, 100)
+        pp_nonzero(PyrrolitePart, 0.5, 200)
+        pp_nonzero(LiquidXiranite, 10, 200)
+        pp_nonzero(LiquidHeavyXiranite, 0.5, 100)
+        # no need to model delivery jobs
+        # 14000/day * 2 ~= 19.4/min
+        # this is easily met with the excess of sellable goods (which we can't sell anyway)
+        # or some unused starting solids
+        # or with a single planting loop (30/min)
+        # or sandleaf + sandleaf powder + carbon + carbon powder gives you 4 different solids
+    optimize(set(), all_recipes, goal_material, force_fractions=args.force_fractions)
