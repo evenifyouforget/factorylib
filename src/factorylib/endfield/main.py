@@ -465,7 +465,8 @@ def main():
     AcridENV = Material(name='Acrid ENV', tags=VIRTUAL)
     XiraniteENV = Material(name='Xiranite ENV', tags=VIRTUAL)
     all_recipes = []
-    all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 100 * Xiragen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
+    #all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 100 * Xiragen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
+    all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
     def std_building(building_name, power):
         def make_recipe(inputs, outputs, /, max_multiples=inf, integer_only=False, integer_inputs=None):
             power_str = f' ({power} W)' if power else ''
@@ -629,7 +630,7 @@ def main():
     std_sg_transmute_pair(30 * Pyrrolite, 30 * PyrroliteGas)
     std_gas_reactor = std_building('Gas Reactor Globe', 50)
     std_gas_reactor(60 * HetoniteGas + 30 * Xiragen, 30 * PyrroliteGas, integer_inputs=AcridENV)
-    std_field = std_building('Gas Dispersing Unit', 0)
+    std_field = std_building('Gas Dispersing Unit', 0.01) # real cost is 0, but we don't want LP to treat it as free
     std_field(6 * Inergen, 4 * StableENV, integer_only=True)
     std_field(6 * Aquagen, 4 * HumidENV, integer_only=True)
     std_field(6 * Acridgen, 4 * AcridENV, integer_only=True)
@@ -671,9 +672,9 @@ def main():
             R = 0.85
             for i in range(N_SEGMENTS):
                 std_pt(mat_amount * R ** i * target_mat, pp_worth * 0.2 / N_SEGMENTS * PerformancePoint, max_multiples=1)
-        pp_satisfaction(WulingStockBill, 1500, 10000)
+        pp_satisfaction(WulingStockBill, 1600, 10000)
         # since the factory already covers its own power cost, the power goal is only for additional buildings
-        pp_satisfaction(Watt, 2000, 10000)
+        pp_satisfaction(Watt, 2500, 10000)
         def pp_nonzero(target_mat, mat_amount, pp_worth):
             std_pt = std_building(f'Award Points For {target_mat}', 0)
             # N segments with same output but different input
@@ -695,16 +696,19 @@ def main():
         std_craft(CraftingPoint[1], CraftingPoint[0])
         std_craft(CraftingPoint[2], 5 * CraftingPoint[1])
         std_craft(CraftingPoint[3], 2 * CraftingPoint[2])
-        pp_nonzero(CraftingPoint[0], 0.5, 100)
-        pp_nonzero(CraftingPoint[1], 0.5, 100)
-        pp_nonzero(CraftingPoint[2], 0.25, 100)
-        pp_nonzero(CraftingPoint[3], 0.25, 200)
-        pp_nonzero(CupriumCanister, 1, 200)
-        pp_nonzero(CupriumPart, 0.5, 100)
+        pp_nonzero(CraftingPoint[0], 0.05, 100)
+        pp_nonzero(CraftingPoint[1], 0.05, 100)
+        pp_nonzero(CraftingPoint[2], 0.05, 100)
+        pp_nonzero(CraftingPoint[3], 0.1, 200)
+        # materials that already occur in other pipelines can be siphoned to a stash in storage mode
+        # or for liquids, a fluid tank
+        # after quickly saving up the small amount, it will not siphon anymore from main production
+        #pp_nonzero(CupriumCanister, 1, 200)
+        #pp_nonzero(CupriumPart, 0.5, 100)
         pp_nonzero(HetonitePart, 0.5, 100)
-        pp_nonzero(PyrrolitePart, 0.5, 200)
-        pp_nonzero(LiquidXiranite, 10, 200)
-        pp_nonzero(LiquidHeavyXiranite, 0.5, 100)
+        pp_nonzero(PyrrolitePart, 1, 500)
+        #pp_nonzero(LiquidXiranite, 15, 200)
+        #pp_nonzero(LiquidHeavyXiranite, 0.5, 100)
         # no need to model delivery jobs
         # 14000/day * 2 ~= 19.4/min
         # this is easily met with the excess of sellable goods (which we can't sell anyway)
