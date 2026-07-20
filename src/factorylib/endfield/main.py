@@ -1,4 +1,5 @@
 import argparse
+import graphviz
 import numpy as np
 from numpy import inf
 from scipy.optimize import Bounds, LinearConstraint, milp
@@ -10,6 +11,7 @@ SOLID = 'S'
 LIQUID = 'L'
 GAS = 'G'
 VIRTUAL = 'V'
+HIDDEN = 'H'
 _EPS = 1e-12
 FRACTION_PREMULTIPLY = 12
 FRACTION_LIMIT_DENOM = 8
@@ -68,7 +70,7 @@ class Material(object):
     def __add__(self, other):
         if not other:
             return self
-        return AddMaterial(self, other)
+        return AddMaterial(self, other).simplify()
     def __radd__(self, other):
         return self + other
     def __sub__(self, other):
@@ -78,7 +80,7 @@ class Material(object):
     def __mul__(self, other):
         if other == 1:
             return self
-        return MulMaterial(self, other)
+        return MulMaterial(self, other).simplify()
     def __rmul__(self, other):
         return self * other
     def __neg__(self):
@@ -87,6 +89,12 @@ class Material(object):
         return {self}
     def __str__(self):
         return f'{self.name}'
+    def simplify(self):
+        return self
+    def is_negative(self):
+        return False
+    def split(self):
+        return (0, self)
 
 class AddMaterial(Material):
     def __init__(self, lhs, rhs):
@@ -97,8 +105,44 @@ class AddMaterial(Material):
     def gather_materials(self):
         return gather_materials(self.lhs) | gather_materials(self.rhs)
     def __str__(self):
+        if self.rhs.is_negative():
+            return f'{self.lhs} - {-1 * self.rhs}'
         return f'{self.lhs} + {self.rhs}'
-    
+    def simplify(self):
+        # try to expand sum
+        queue = [self.lhs, self.rhs]
+        others = []
+        while queue:
+            x = queue.pop()
+            if isinstance(x, AddMaterial):
+                queue.append(x.lhs)
+                queue.append(x.rhs)
+            else:
+                others.append(x)
+        others = others[::-1]
+        result = others[0]
+        for x in others[1:]:
+            result = AddMaterial(result, x)
+        return result
+    def split(self):
+        queue = [self.lhs, self.rhs]
+        others = []
+        while queue:
+            x = queue.pop()
+            if isinstance(x, AddMaterial):
+                queue.append(x.lhs)
+                queue.append(x.rhs)
+            else:
+                others.append(x)
+        others = others[::-1]
+        pos = []
+        neg = []
+        for x in others:
+            if x.is_negative():
+                neg.append(-x)
+            else:
+                pos.append(x)
+        return sum(neg), sum(pos)
 
 class MulMaterial(Material):
     def __init__(self, lhs, rhs):
@@ -113,9 +157,40 @@ class MulMaterial(Material):
         rhs = self.rhs
         if isinstance(rhs, (int, float)) and isinstance(lhs, Material):
             lhs, rhs = rhs, lhs
-        if isinstance(lhs, (int, float)) and isinstance(rhs, Material):
+        if isinstance(lhs, (int, float)) and type(rhs) is Material:
             return f'{lhs}{rhs.unit} {rhs.name}'
-        return f'{lhs}{rhs}'
+        if lhs == -1:
+            return f'-{rhs}'
+        return f'{lhs}×{rhs}'
+    def simplify(self):
+        # try to expand product
+        queue = [self.lhs, self.rhs]
+        constant = 1
+        others = []
+        while queue:
+            x = queue.pop()
+            if isinstance(x, (int, float)):
+                constant *= x
+            elif isinstance(x, MulMaterial):
+                queue.append(x.lhs)
+                queue.append(x.rhs)
+            else:
+                others.append(x)
+        others = others[::-1]
+        result = others[0]
+        for x in others[1:]:
+            result = MulMaterial(result, x)
+        result = MulMaterial(constant, result)
+        return result
+    def is_negative(self):
+        lhs = self.lhs
+        rhs = self.rhs
+        if isinstance(rhs, (int, float)) and isinstance(lhs, Material):
+            lhs, rhs = rhs, lhs
+        if isinstance(lhs, (int, float)) and type(rhs) is Material:
+            return lhs < 0
+        return False
+            
 
 def substitute(expr, subs_dict):
     if isinstance(expr, (int, float)):
@@ -125,12 +200,15 @@ def substitute(expr, subs_dict):
 
 class Recipe(object):
     def __init__(self, expression, name, max_multiples=inf, integer_only=False):
-        self.expression = expression
+        self.expression = expression.simplify()
         self.name = name
         self.max_multiples = max_multiples
         self.integer_only = integer_only
     def gather_materials(self):
         return gather_materials(self.expression)
+    def nice_expression_str(self):
+        neg, pos = self.expression.split()
+        return f'{neg} --> {pos}'
 
 
 def gather_materials(expr):
@@ -143,7 +221,7 @@ def gather_materials(expr):
         return set()
     return expr.gather_materials()
 
-def optimize(all_materials, all_recipes, material_to_maximize, force_fractions=False):
+def optimize(all_materials, all_recipes, material_to_maximize, force_fractions=False, graph_outfile=None):
     # Get all recipes
     num_recipes = len(all_recipes)
     # Get the complete list of all materials, including recipe counters
@@ -190,20 +268,54 @@ def optimize(all_materials, all_recipes, material_to_maximize, force_fractions=F
             continue
         print(f'- {multiples} multiples of {all_recipes[i].name}')
     print('## Balance Sheet Per Material')
+    plus_amount = np.maximum(0, recipe_matrix.T) @ all_recipes_multiples
     net_amount = recipe_matrix.T @ all_recipes_multiples
+    dot = None
+    node_names = {}
+    hidden_node_mats = set()
+    if graph_outfile:
+        dot = graphviz.Digraph(engine='sfdp')
+        for i, material in enumerate(all_materials):
+            node_names[material] = inode_name = f'material{i}'
+            iplus = plus_amount[i]
+            inet = net_amount[i]
+            if iplus == 0 and inet == 0 or HIDDEN in material.tags:
+                hidden_node_mats.add(material)
+                continue
+            isub = iplus - inet
+            dot.node(inode_name, f'{material}\n+{iplus}{material.unit} - {isub}{material.unit}\n={inet}{material.unit}')
     bits = [[f'### {material.name} (net {net}{material.unit})'] for material, net in zip(all_materials, net_amount)]
     for i, multiples in enumerate(all_recipes_multiples):
         if multiples == 0:
             continue
         recipe = all_recipes[i]
+        nodef = None
+        if dot:
+            inode_name = f'recipe{i}'
+            nodef = (inode_name, f'{recipe.name}\n{recipe.nice_expression_str()}\n{multiples} multiples')
+        edgefs = []
         for j, material in enumerate(all_materials):
             per_multiple = recipe_matrix[i,j]
             if per_multiple == 0:
                 continue
             contribution = multiples * per_multiple
             bits[j].append(f'- {contribution}{material.unit} from {multiples} multiples of {recipe.name}')
+            if dot and material not in hidden_node_mats:
+                edge_in = inode_name
+                edge_out = node_names[material]
+                if contribution < 0:
+                    edge_in, edge_out = edge_out, edge_in
+                    contribution = -contribution
+                edgefs.append((edge_in, edge_out, f'{contribution}{material.unit}'))
+        if len(edgefs) >= 2:
+            # only show recipes that have 2 or more connections
+            dot.node(*nodef)
+            for edgef in edgefs:
+                dot.edge(*edgef)
     bits.sort()
     print('\n'.join(map('\n'.join, bits)))
+    if dot:
+        dot.render(graph_outfile)
 
 def test_main():
     FOOIUM = Material(name='Fooium', unit='/min', tags=SOLID)
@@ -221,12 +333,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--force-fractions', action='store_true', help='Forces all printed quantities to be an exact fraction, even if the original quantity may not be near any simple fraction. Results in an approximately satisfiable solution that is easier to build.')
     parser.add_argument('-t', '--target', choices=['sellable', 'mixed'], help='Which goal to optimize for')
+    parser.add_argument('-o', '--graph-outfile', help='File to render graph to')
     args = parser.parse_args()
     PMIN = '/min'
     goal_material = WulingStockBill = Material(name='$', unit=PMIN, tags=VIRTUAL)
-    Watt = Material(name='W', tags=VIRTUAL)
-    def std_alloc(name):
-        return Material(name=f'Allocation: {name}', tags=VIRTUAL)
+    Watt = Material(name='W', tags=VIRTUAL+HIDDEN)
+    def std_alloc(name, additional_tags=''):
+        return Material(name=f'Allocation: [{name}]', tags=VIRTUAL+additional_tags)
     ForgeAllocation = std_alloc('Forge of the Sky')
     MetatransferAllocation = std_alloc('Metatransfer')
     def std_solid(name):
@@ -351,7 +464,7 @@ def main():
     def std_building(building_name, power):
         def make_recipe(inputs, outputs, /, max_multiples=inf, integer_only=False, integer_inputs=None):
             name = f'{building_name} ({power} W): {inputs} --> {outputs}'
-            counter = std_alloc(name)
+            counter = std_alloc(name, additional_tags=HIDDEN)
             counter_inputs = power * Watt
             if integer_inputs:
                 counter_inputs = counter_inputs + integer_inputs
@@ -526,9 +639,9 @@ def main():
     std_sell(CupriumPart, WulingStockBill)
     std_sell(SeparatorCore, WulingStockBill)
     std_sell(YazhenSyringeC, 16 * WulingStockBill)
-    std_sell(JincaoDrink, 16 * WulingStockBill)
+    #std_sell(JincaoDrink, 16 * WulingStockBill)
     std_sell(YazhenSyringeA, 22 * WulingStockBill)
-    std_sell(JincaoTea, 22 * WulingStockBill)
+    #std_sell(JincaoTea, 22 * WulingStockBill)
     std_sell(LCWulingBattery, 25 * WulingStockBill)
     std_sell(HeavyXiranite, 27 * WulingStockBill)
     std_sell(HetonitePart, 48 * WulingStockBill)
@@ -537,10 +650,10 @@ def main():
     std_test_area = std_building('Test Area Purification Node', 0)
     #std_test_area(30 * Sewage, XirconEffluent, max_multiples=12)
     if args.target == 'mixed':
-        goal_material = PerformancePoint = Material(name='pp', tags=VIRTUAL)
+        goal_material = PerformancePoint = Material(name='pp', tags=VIRTUAL+HIDDEN)
         def pp_satisfaction(target_mat, mat_amount, pp_worth):
             target_expr = mat_amount * target_mat
-            First100Percent = std_alloc(f'First 100% of {target_expr}')
+            First100Percent = std_alloc(f'First 100% of {target_expr}', additional_tags=HIDDEN)
             std_pt = std_building(f'Award Points For {target_mat}', 0)
             std_pt(target_expr, First100Percent, max_multiples=1)
             std_pt(First100Percent, pp_worth * 0.1 * PerformancePoint)
@@ -591,4 +704,4 @@ def main():
         # or some unused starting solids
         # or with a single planting loop (30/min)
         # or sandleaf + sandleaf powder + carbon + carbon powder gives you 4 different solids
-    optimize(set(), all_recipes, goal_material, force_fractions=args.force_fractions)
+    optimize(set(), all_recipes, goal_material, force_fractions=args.force_fractions, graph_outfile=args.graph_outfile)
