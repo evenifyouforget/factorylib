@@ -465,8 +465,8 @@ def main():
     AcridENV = Material(name='Acrid ENV', tags=VIRTUAL)
     XiraniteENV = Material(name='Xiranite ENV', tags=VIRTUAL)
     all_recipes = []
-    #all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 100 * Xiragen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
-    all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
+    all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 100 * Xiragen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
+    #all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
     def std_building(building_name, power):
         def make_recipe(inputs, outputs, /, max_multiples=inf, integer_only=False, integer_inputs=None):
             power_str = f' ({power} W)' if power else ''
