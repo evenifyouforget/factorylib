@@ -127,7 +127,9 @@ def test_foo_bar_scenario_matches_reference_solution():
         max_multiples=2,
         integer_only=True,
     )
-    pure_barium = Recipe(-barium + 0.1 * foobarium, name="Inefficient Barium Conversion")
+    pure_barium = Recipe(
+        -barium + 0.1 * foobarium, name="Inefficient Barium Conversion"
+    )
     all_recipes = [free_materials, foo_plus_bar, special_offer, pure_barium]
     result = solve([fooium, barium, foobarium], all_recipes, foobarium)
     assert result.status == 0

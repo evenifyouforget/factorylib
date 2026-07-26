@@ -1,4 +1,5 @@
 import argparse
+
 from numpy import inf
 
 from factorylib.diagram import build_graph, render_graph
@@ -26,7 +27,7 @@ def optimize(all_materials, all_recipes, material_to_maximize, force_fractions=F
         render_graph(dot, graph_outfile)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--force-fractions', action='store_true', help='Forces all printed quantities to be an exact fraction, even if the original quantity may not be near any simple fraction. Results in an approximately satisfiable solution that is easier to build.')
     parser.add_argument('-t', '--target', choices=['sellable', 'mixed'], help='Which goal to optimize for')
@@ -347,7 +348,7 @@ def main():
     std_sell(HetonitePart, 48 * WulingStockBill)
     std_sell(SCWulingBattery, 54 * WulingStockBill)
     std_sell(PyrrolitePart, 70 * WulingStockBill)
-    std_test_area = std_building('Test Area Purification Node', 0)
+    std_test_area = std_building('Test Area Purification Node', 0)  # noqa: F841
     #std_test_area(30 * Sewage, XirconEffluent, max_multiples=12)
     if args.target == 'mixed':
         goal_material = PerformancePoint = Material(name='pp', tags=VIRTUAL+HIDDEN)

@@ -63,7 +63,7 @@ def find_close_fraction(
 
     x_as_frac = round_to_fraction(x)
     if not force_fractions:
-        if np.isclose(x_as_frac, x, rtol=_EPS, atol=_EPS):
+        if np.isclose(float(x_as_frac), x, rtol=_EPS, atol=_EPS):
             return x_as_frac
         return x
     x_modified = x

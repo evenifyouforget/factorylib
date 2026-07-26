@@ -9,14 +9,15 @@ description = "Useful math models for factory games"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
-dependencies = ["numpy", "scipy"]
+# graphviz is a hard runtime dependency: factorylib.diagram (imported by
+# factorylib.endfield.main unconditionally) imports it at module load time.
+dependencies = ["numpy", "scipy", "graphviz"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "pytest-xdist", "graphviz"]
-diagram = ["graphviz"]
+dev = ["pytest", "pytest-cov", "pytest-xdist", "ruff", "mypy"]
 
 [project.scripts]
-factorylib-endfield = "factorylib.endfield.cli:main"
+factorylib-endfield = "factorylib.endfield.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/factorylib"]
@@ -30,3 +31,34 @@ source = ["factorylib"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# main.py's ~180 endfield Recipe/Material declarations are deliberately kept
+# one-per-line (matching the design oracle's own authored style, for
+# diffability against it) even where that exceeds the line-length limit;
+# wrapping them mechanically would be a large diff for a purely cosmetic
+# change and risks introducing a transcription error into the economics.
+"src/factorylib/endfield/main.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["factorylib"]
+# main.py's local closures (std_alloc/std_building/std_pump/... helper
+# factories used to declare ~180 endfield recipes) are intentionally left
+# loosely typed here rather than annotated with a disproportionate number
+# of Callable[...] signatures for one-off CLI data declarations; see the
+# per-module override below.
+[[tool.mypy.overrides]]
+module = "factorylib.endfield.main"
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+
+# Neither scipy nor graphviz ships inline type stubs (or a py.typed marker)
+# for the APIs used here (scipy.optimize.milp/Bounds/LinearConstraint,
+# graphviz.Digraph); scipy-stubs exists as a separate package but is not
+# vendored/pinned here to keep the dependency footprint minimal for this
+# reconciliation pass.
+[[tool.mypy.overrides]]
+module = ["scipy.*", "graphviz.*"]
+ignore_missing_imports = true

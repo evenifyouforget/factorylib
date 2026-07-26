@@ -220,7 +220,7 @@ class MulMaterial(Material):
         for x in others[1:]:
             result = MulMaterial(result, x)
         result = MulMaterial(constant, result)
-        return result  # type: ignore[no-any-return]
+        return result
 
     def is_negative(self) -> bool:
         lhs = self.lhs
