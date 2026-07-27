@@ -19,6 +19,18 @@ through ``substitute``/the operator overloads is genuinely dynamic. Rather
 than force an imprecise or overly-broad Union everywhere, the few dynamic
 seams are typed ``Any`` explicitly (see module docstring notes below) --
 a deliberate, narrow strictness cut rather than an oversight.
+
+``__str__`` is deliberately naive: it always joins sums with `` + `` and
+products with ``×`` (with one special case -- a plain numeric coefficient
+times a bare ``Material`` prints as ``"<n><unit> <name>"``, e.g. ``"3/min
+Ore"``, since that's what every recipe declaration actually looks like).
+An earlier version tried to detect negation and collapse it into ``-``
+(plus a tree-flattening ``simplify()`` step to make that detection see
+through nested sums/products), which produced inconsistent output like
+``"30 x Foo + -Bar + Baz x -40 x 2"`` whenever the detection didn't quite
+line up with how an expression was actually built. Consistently plain
+output (e.g. ``"-1×Ore + Bar"`` instead of a hypothetical prettier ``"-Ore
++ Bar"``) beats output that's sometimes prettier and sometimes wrong.
 """
 
 from __future__ import annotations
@@ -78,7 +90,7 @@ class Material:
     def __add__(self, other: Any) -> Any:
         if not other:
             return self
-        return AddMaterial(self, other).simplify()
+        return AddMaterial(self, other)
 
     def __radd__(self, other: Any) -> Any:
         return self + other
@@ -92,7 +104,7 @@ class Material:
     def __mul__(self, other: Any) -> Any:
         if other == 1:
             return self
-        return MulMaterial(self, other).simplify()
+        return MulMaterial(self, other)
 
     def __rmul__(self, other: Any) -> Any:
         return self * other
@@ -105,15 +117,6 @@ class Material:
 
     def __str__(self) -> str:
         return f"{self.name}"
-
-    def simplify(self) -> Material:
-        return self
-
-    def is_negative(self) -> bool:
-        return False
-
-    def split(self) -> tuple[Any, Any]:
-        return (0, self)
 
 
 class AddMaterial(Material):
@@ -130,46 +133,7 @@ class AddMaterial(Material):
         return gather_materials(self.lhs) | gather_materials(self.rhs)
 
     def __str__(self) -> str:
-        if self.rhs.is_negative():
-            return f"{self.lhs} - {-1 * self.rhs}"
         return f"{self.lhs} + {self.rhs}"
-
-    def simplify(self) -> Material:
-        # try to expand sum
-        queue: list[Any] = [self.lhs, self.rhs]
-        others: list[Any] = []
-        while queue:
-            x = queue.pop()
-            if isinstance(x, AddMaterial):
-                queue.append(x.lhs)
-                queue.append(x.rhs)
-            else:
-                others.append(x)
-        others = others[::-1]
-        result = others[0]
-        for x in others[1:]:
-            result = AddMaterial(result, x)
-        return result  # type: ignore[no-any-return]
-
-    def split(self) -> tuple[Any, Any]:
-        queue: list[Any] = [self.lhs, self.rhs]
-        others: list[Any] = []
-        while queue:
-            x = queue.pop()
-            if isinstance(x, AddMaterial):
-                queue.append(x.lhs)
-                queue.append(x.rhs)
-            else:
-                others.append(x)
-        others = others[::-1]
-        pos = []
-        neg = []
-        for x in others:
-            if x.is_negative():
-                neg.append(-x)
-            else:
-                pos.append(x)
-        return sum(neg), sum(pos)
 
 
 class MulMaterial(Material):
@@ -197,39 +161,7 @@ class MulMaterial(Material):
             lhs, rhs = rhs, lhs
         if isinstance(lhs, (int, float)) and type(rhs) is Material:
             return f"{lhs}{rhs.unit} {rhs.name}"
-        if lhs == -1:
-            return f"-{rhs}"
         return f"{lhs}×{rhs}"
-
-    def simplify(self) -> Material:
-        # try to expand product
-        queue: list[Any] = [self.lhs, self.rhs]
-        constant: Any = 1
-        others: list[Any] = []
-        while queue:
-            x = queue.pop()
-            if isinstance(x, (int, float)):
-                constant *= x
-            elif isinstance(x, MulMaterial):
-                queue.append(x.lhs)
-                queue.append(x.rhs)
-            else:
-                others.append(x)
-        others = others[::-1]
-        result = others[0]
-        for x in others[1:]:
-            result = MulMaterial(result, x)
-        result = MulMaterial(constant, result)
-        return result
-
-    def is_negative(self) -> bool:
-        lhs = self.lhs
-        rhs = self.rhs
-        if isinstance(rhs, (int, float)) and isinstance(lhs, Material):
-            lhs, rhs = rhs, lhs
-        if isinstance(lhs, (int, float)) and type(rhs) is Material:
-            return bool(lhs < 0)
-        return False
 
 
 def substitute(expr: Any, subs_dict: dict[Material, Any]) -> Any:
@@ -259,17 +191,13 @@ class Recipe:
         max_multiples: float = float("inf"),
         integer_only: bool = False,
     ) -> None:
-        self.expression = expression.simplify()
+        self.expression = expression
         self.name = name
         self.max_multiples = max_multiples
         self.integer_only = integer_only
 
     def gather_materials(self) -> set[Material]:
         return gather_materials(self.expression)
-
-    def nice_expression_str(self) -> str:
-        neg, pos = self.expression.split()
-        return f"{neg} --> {pos}"
 
 
 def gather_materials(expr: Any) -> set[Material]:

@@ -69,20 +69,25 @@ def test_add_material_builds_sum_and_str():
     assert str(expr) == "Ore + Bar"
 
 
+def test_rsub_with_plain_number_on_left():
+    ore = Material(name="Ore", unit="/min", tags=SOLID)
+    expr = 10 - ore
+    assert str(expr) == "-1/min Ore + 10"
+
+
 def test_add_material_with_zero_returns_self():
     ore = Material(name="Ore")
     assert (ore + 0) is ore
     assert (0 + ore) is ore
 
 
-def test_sub_renders_as_minus():
+def test_sub_renders_as_plus_negative_coefficient():
+    """__str__ never special-cases negation into a "-" -- subtraction is
+    just addition of a -1 coefficient, printed plainly."""
     ore = Material(name="Ore", unit="/min", tags=SOLID)
     bar = Material(name="Bar", unit="/min", tags=SOLID)
     expr = ore - bar
-    # A bare Material operand (not a compound expression) always renders via
-    # the "<coefficient><unit> <name>" branch, even for a -1 coefficient --
-    # the "-{rhs}" shorthand only kicks in for compound rhs expressions.
-    assert str(expr) == "Ore - 1/min Bar"
+    assert str(expr) == "Ore + -1/min Bar"
 
 
 def test_mul_material_coefficient_str():
@@ -105,16 +110,18 @@ def test_neg_material_str():
     assert str(expr) == "-1/min Ore"
 
 
-def test_neg_of_compound_expression_uses_minus_shorthand():
+def test_neg_of_compound_expression_has_no_special_case():
+    """Negating a compound (AddMaterial) expression falls through to the
+    plain "lhs×rhs" branch, since the "number, bare Material" special
+    case only matches an exact Material, not an AddMaterial -- consistent
+    (if not maximally pretty) rather than another special case."""
     ore = Material(name="Ore", unit="/min", tags=SOLID)
     bar = Material(name="Bar", unit="/min", tags=SOLID)
     expr = -(ore + bar)
-    # A compound (AddMaterial) rhs takes the "-{rhs}" shorthand branch,
-    # deferring to the inner AddMaterial's own __str__.
-    assert str(expr) == "-Ore + Bar"
+    assert str(expr) == "-1×Ore + Bar"
 
 
-def test_simplify_flattens_nested_sums():
+def test_gather_materials_over_nested_sums():
     a = Material(name="A")
     b = Material(name="B")
     c = Material(name="C")
@@ -146,18 +153,11 @@ def test_recipe_defaults():
     assert recipe.integer_only is False
 
 
-def test_recipe_nice_expression_str():
-    ore = Material(name="Ore", unit="/min", tags=SOLID)
-    metal = Material(name="Metal", unit="/min", tags=SOLID)
-    recipe = Recipe(-2 * ore + 1 * metal, name="Refine")
-    assert recipe.nice_expression_str() == "2/min Ore --> Metal"
-
-
 def test_substitute_evaluates_expression_against_basis_vectors():
     ore = Material(name="Ore")
     metal = Material(name="Metal")
     subs = {ore: np.array([1.0, 0.0]), metal: np.array([0.0, 1.0])}
-    expr = (-2 * ore + 3 * metal).simplify()
+    expr = -2 * ore + 3 * metal
     result = substitute(expr, subs)
     assert np.allclose(result, [-2.0, 3.0])
 
@@ -179,10 +179,10 @@ def test_material_lt_requires_material_operand():
         _ = a < 5  # not a Material; .name lookup on int fails
 
 
-def test_add_material_simplify_flattens_three_terms():
-    """A 3+ term sum builds nested AddMaterial nodes but simplify() flattens
-    them back to a left-leaning chain, exercising the for-loop branch (not
-    just the trivial 1-other-term case)."""
+def test_add_material_over_three_terms_builds_a_nested_chain():
+    """A 3+ term sum builds nested AddMaterial nodes (left-leaning, no
+    flattening) -- str() still reads left-to-right correctly regardless,
+    since nesting direction doesn't affect the "+"-joined text."""
     a = Material(name="A")
     b = Material(name="B")
     c = Material(name="C")
@@ -191,24 +191,21 @@ def test_add_material_simplify_flattens_three_terms():
     assert str(expr) == "A + B + C"
 
 
-def test_mul_material_simplify_flattens_three_factors():
+def test_mul_material_over_three_factors_is_not_constant_folded():
+    """2 * 3 * ore is plain int arithmetic (2*3=6) before it ever reaches
+    Material.__rmul__, so this still prints as "6/min Ore" -- but genuine
+    nested MulMaterial (a Material expression times a Material
+    expression, not two plain numbers) is no longer constant-folded."""
     ore = Material(name="Ore", unit="/min", tags=SOLID)
     expr = 2 * 3 * ore
     assert isinstance(expr, MulMaterial)
     assert str(expr) == "6/min Ore"
+
+    nested = 3 * (2 * ore)
+    assert str(nested) == "3×2/min Ore"
 
 
 def test_mul_material_str_swaps_number_on_right():
     ore = Material(name="Ore", unit="/min", tags=SOLID)
     expr = MulMaterial(ore, 4)
     assert str(expr) == "4/min Ore"
-
-
-def test_add_material_split_partitions_positive_and_negative():
-    ore = Material(name="Ore", unit="/min", tags=SOLID)
-    bar = Material(name="Bar", unit="/min", tags=SOLID)
-    metal = Material(name="Metal", unit="/min", tags=SOLID)
-    recipe = Recipe(-2 * ore - 1 * bar + 3 * metal, name="Refine")
-    neg, pos = recipe.expression.split()
-    assert gather_materials(neg) == {ore, bar}
-    assert gather_materials(pos) == {metal}
