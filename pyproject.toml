@@ -62,3 +62,10 @@ disallow_untyped_calls = false
 [[tool.mypy.overrides]]
 module = ["scipy.*", "graphviz.*"]
 ignore_missing_imports = true
+
+# network.py is deprecated reference code (see its module docstring) --
+# untyped from before this reconciliation pass, and not worth annotating
+# just to have it thrown away by the future rewrite it's waiting on.
+[[tool.mypy.overrides]]
+module = "factorylib.network"
+ignore_errors = true
