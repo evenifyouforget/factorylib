@@ -6,31 +6,44 @@ bookkeeping quantities like "$" or power) combined via ``+`` / ``-`` / ``*``
 into linear expressions, and ``Recipe`` objects that pair a (materials in) -->
 (materials out) expression with a name and optional run-count bounds.
 
-``Material`` overloads the ordinary arithmetic operators to build a small
-expression tree (``AddMaterial`` / ``MulMaterial`` nodes over ``Material``
-leaves and numeric coefficients) rather than doing any numeric work itself.
-``substitute()`` later evaluates such a tree against a mapping from each leaf
-``Material`` to a concrete value (typically a numpy unit basis vector, when
-building the recipe matrix for :mod:`factorylib.optimize`).
+The only legal shape of a Material expression is a linear combination
+``c_1*m_1 + c_2*m_2 + ... + c_n*m_n``, where each ``c_i`` is a plain number
+and each ``m_i`` is an elementary ``Material`` leaf -- there is no other way
+to legally combine materials (multiplying two Material expressions together
+is never legal, since neither side is a plain number). ``MaterialExpression``
+is the abstract base for the two concrete shapes this takes: a bare
+``Material`` (the trivial one-term combination ``1*self``) or a
+``LinearCombinationMaterial`` (any other combination, stored flat as a
+``{Material: coefficient}`` dict rather than a tree). Arithmetic always
+normalizes to one of these two -- adding/multiplying always merges into (or
+rebuilds) a flat dict, immediately combining matching terms and folding
+constants, rather than building up a nested tree that would need a separate
+flattening pass later. ``substitute()`` evaluates an expression against a
+mapping from each leaf ``Material`` to a concrete value (typically a numpy
+unit basis vector, when building the recipe matrix for
+:mod:`factorylib.optimize`) -- generically, via ``terms()``, so neither
+concrete subclass needs its own ``substitute()``/``gather_materials()``.
 
-Because the same expression tree is evaluated over ``Material`` leaves,
-plain numbers, and numpy arrays interchangeably, the value type flowing
-through ``substitute``/the operator overloads is genuinely dynamic. Rather
-than force an imprecise or overly-broad Union everywhere, the few dynamic
-seams are typed ``Any`` explicitly (see module docstring notes below) --
-a deliberate, narrow strictness cut rather than an oversight.
+Because the same expression is evaluated over ``Material`` leaves, plain
+numbers, and numpy arrays interchangeably, the value type flowing through
+``substitute``/the operator overloads is genuinely dynamic. Rather than force
+an imprecise or overly-broad Union everywhere, the few dynamic seams are
+typed ``Any`` explicitly -- a deliberate, narrow strictness cut rather than
+an oversight.
 
-``__str__`` is deliberately naive: it always joins sums with `` + `` and
-products with ``×`` (with one special case -- a plain numeric coefficient
-times a bare ``Material`` prints as ``"<n><unit> <name>"``, e.g. ``"3/min
-Ore"``, since that's what every recipe declaration actually looks like).
-An earlier version tried to detect negation and collapse it into ``-``
-(plus a tree-flattening ``simplify()`` step to make that detection see
-through nested sums/products), which produced inconsistent output like
-``"30 x Foo + -Bar + Baz x -40 x 2"`` whenever the detection didn't quite
-line up with how an expression was actually built. Consistently plain
-output (e.g. ``"-1×Ore + Bar"`` instead of a hypothetical prettier ``"-Ore
-+ Bar"``) beats output that's sometimes prettier and sometimes wrong.
+The flat representation makes printing straightforward and always correct:
+``LinearCombinationMaterial.__str__`` always shows a term's coefficient and
+unit (e.g. ``"3/min Ore"``, even at coefficient 1: ``"1/min Ore"``) and
+always renders a negative coefficient as ``" - "`` rather than ``" + -"``,
+with no special-casing or sign-detection needed -- every term's sign is
+already known exactly, since matching terms were already merged when the
+expression was built. An earlier version tried to bolt this kind of
+prettification onto a tree of ``AddMaterial``/``MulMaterial`` nodes (plus a
+separate ``simplify()`` pass to flatten nested trees so sign-detection could
+see through them), which produced inconsistent output whenever the detection
+didn't quite line up with how an expression was actually built -- e.g.
+``"30 x Foo + -Bar + Baz x -40 x 2"``. Storing terms flat from the start
+removes the class of bug entirely, rather than papering over it.
 """
 
 from __future__ import annotations
@@ -49,7 +62,88 @@ HIDDEN = "H"
 _unique_counter = 0
 
 
-class Material:
+class MaterialExpression:
+    """Abstract base for anything usable in a linear Recipe expression: a
+    linear combination of elementary ``Material`` leaves. The two concrete
+    shapes are ``Material`` itself (a trivial one-term combination) and
+    ``LinearCombinationMaterial`` (any other combination) -- see module
+    docstring. Concrete subclasses only need to implement ``terms()`` and
+    ``__str__``; arithmetic, ``substitute()``, and ``gather_materials()``
+    are all defined here generically in terms of ``terms()``.
+    """
+
+    def terms(self) -> dict["Material", Any]:
+        """This expression as a ``{elementary Material: coefficient}``
+        dict. Never includes zero-coefficient entries."""
+        raise NotImplementedError
+
+    def gather_materials(self) -> set["Material"]:
+        return set(self.terms())
+
+    def substitute(self, subs_dict: dict["Material", Any]) -> Any:
+        result: Any = 0
+        for material, coeff in self.terms().items():
+            result = result + coeff * subs_dict[material]
+        return result
+
+    def __add__(self, other: Any) -> MaterialExpression:
+        if isinstance(other, MaterialExpression):
+            merged = dict(self.terms())
+            for material, coeff in other.terms().items():
+                merged[material] = merged.get(material, 0) + coeff
+            return _combination(merged)
+        if not other:
+            return self
+        raise TypeError(
+            f"cannot add {other!r} to a Material expression -- only 0 or "
+            "another Material expression is legal"
+        )
+
+    def __radd__(self, other: Any) -> MaterialExpression:
+        return self + other  # type: ignore[no-any-return]
+
+    def __sub__(self, other: Any) -> MaterialExpression:
+        if isinstance(other, MaterialExpression):
+            return self + (other * -1)
+        return self + other  # type: ignore[no-any-return]
+
+    def __rsub__(self, other: Any) -> MaterialExpression:
+        return (self * -1) + other  # type: ignore[no-any-return]
+
+    def __mul__(self, other: Any) -> MaterialExpression:
+        if not isinstance(other, (int, float)):
+            raise TypeError(
+                f"cannot multiply a Material expression by {other!r} -- only "
+                "by a plain number (multiplying two Material expressions "
+                "together is never legal)"
+            )
+        if other == 1:
+            return self
+        return _combination(
+            {material: coeff * other for material, coeff in self.terms().items()}
+        )
+
+    def __rmul__(self, other: Any) -> MaterialExpression:
+        return self * other  # type: ignore[no-any-return]
+
+    def __neg__(self) -> MaterialExpression:
+        return self * -1
+
+
+def _combination(terms: dict["Material", Any]) -> MaterialExpression:
+    """Build the canonical MaterialExpression for `terms`: a bare Material
+    if it reduces to exactly one term at coefficient 1, otherwise a
+    LinearCombinationMaterial (possibly with zero terms, representing the
+    zero expression -- e.g. a 0 W building's power draw)."""
+    nonzero = {material: coeff for material, coeff in terms.items() if coeff != 0}
+    if len(nonzero) == 1:
+        ((material, coeff),) = nonzero.items()
+        if coeff == 1:
+            return material
+    return LinearCombinationMaterial(nonzero)
+
+
+class Material(MaterialExpression):
     """A named quantity (a resource, intermediate, or virtual bookkeeping
     value) that can be combined into linear expressions via ``+``/``-``/``*``.
     """
@@ -84,84 +178,35 @@ class Material:
     def __le__(self, other: Material) -> bool:
         return self.name <= other.name
 
-    def substitute(self, subs_dict: dict[Material, Any]) -> Any:
-        return subs_dict[self]
-
-    def __add__(self, other: Any) -> Any:
-        if not other:
-            return self
-        return AddMaterial(self, other)
-
-    def __radd__(self, other: Any) -> Any:
-        return self + other
-
-    def __sub__(self, other: Any) -> Any:
-        return self + other * -1
-
-    def __rsub__(self, other: Any) -> Any:
-        return other + self * -1
-
-    def __mul__(self, other: Any) -> Any:
-        if other == 1:
-            return self
-        return MulMaterial(self, other)
-
-    def __rmul__(self, other: Any) -> Any:
-        return self * other
-
-    def __neg__(self) -> Any:
-        return self * -1
-
-    def gather_materials(self) -> set[Material]:
-        return {self}
+    def terms(self) -> dict[Material, Any]:
+        return {self: 1}
 
     def __str__(self) -> str:
         return f"{self.name}"
 
 
-class AddMaterial(Material):
-    """A sum of two material expressions (built by ``Material.__add__``)."""
+class LinearCombinationMaterial(MaterialExpression):
+    """A linear combination of two or more elementary Materials (or a
+    single Material at a coefficient other than 1, or zero materials at
+    all -- see ``_combination()``), stored flat rather than as a tree."""
 
-    def __init__(self, lhs: Any, rhs: Any) -> None:
-        self.lhs = lhs
-        self.rhs = rhs
+    def __init__(self, terms: dict[Material, Any]) -> None:
+        self._terms = terms
 
-    def substitute(self, subs_dict: dict[Material, Any]) -> Any:
-        return substitute(self.lhs, subs_dict) + substitute(self.rhs, subs_dict)
-
-    def gather_materials(self) -> set[Material]:
-        return gather_materials(self.lhs) | gather_materials(self.rhs)
+    def terms(self) -> dict[Material, Any]:
+        return self._terms
 
     def __str__(self) -> str:
-        return f"{self.lhs} + {self.rhs}"
-
-
-class MulMaterial(Material):
-    """A product of two material expressions (built by ``Material.__mul__``).
-
-    In practice one side is always a plain numeric coefficient and the other
-    a ``Material``/expression (e.g. ``3 * OriginiumOre``), but the algebra
-    itself doesn't assume that.
-    """
-
-    def __init__(self, lhs: Any, rhs: Any) -> None:
-        self.lhs = lhs
-        self.rhs = rhs
-
-    def substitute(self, subs_dict: dict[Material, Any]) -> Any:
-        return substitute(self.lhs, subs_dict) * substitute(self.rhs, subs_dict)
-
-    def gather_materials(self) -> set[Material]:
-        return gather_materials(self.lhs) | gather_materials(self.rhs)
-
-    def __str__(self) -> str:
-        lhs = self.lhs
-        rhs = self.rhs
-        if isinstance(rhs, (int, float)) and isinstance(lhs, Material):
-            lhs, rhs = rhs, lhs
-        if isinstance(lhs, (int, float)) and type(rhs) is Material:
-            return f"{lhs}{rhs.unit} {rhs.name}"
-        return f"{lhs}×{rhs}"
+        if not self._terms:
+            return "0"
+        parts: list[str] = []
+        for material, coeff in self._terms.items():
+            term = f"{abs(coeff)}{material.unit} {material.name}"
+            if not parts:
+                parts.append(f"-{term}" if coeff < 0 else term)
+            else:
+                parts.append(f" - {term}" if coeff < 0 else f" + {term}")
+        return "".join(parts)
 
 
 def substitute(expr: Any, subs_dict: dict[Material, Any]) -> Any:
@@ -186,7 +231,7 @@ class Recipe:
 
     def __init__(
         self,
-        expression: Any,
+        expression: MaterialExpression,
         name: str,
         max_multiples: float = float("inf"),
         integer_only: bool = False,
