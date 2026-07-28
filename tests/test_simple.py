@@ -99,49 +99,29 @@ def test_converger_explicit_zero_weight():
     assert np.allclose(out, [0.8, 0.0])
 
 
-def test_weighted_port_matches_duplicated_ports_when_fully_saturated():
-    """A port with weight 2/3 competing against a weight-1/3 port should
-    behave like that same port duplicated into two separate, equally-
-    weighted (1/3 each) ports pulling on the same input value -- *when
-    every port is saturated relative to its own weight share* (i.e. each
-    port's raw supply is at least its weight, so it's fully bandwidth-
-    limited rather than supply-limited). In that regime, weighted
-    round-robin literally reduces to "port i gets weights[i] of the
-    belt," so splitting one port's weight into N unweighted ports of
-    weight 1/N each is exactly the same allocation, just reported as N
-    separate numbers instead of one.
-
-    This is NOT true in general (see
-    test_weighted_port_does_not_match_duplicated_ports_when_undersaturated)
-    -- only in this fully-saturated regime."""
+def test_duplicated_port_matches_a_merged_double_weight_double_supply_port():
+    """Splitting a resource across two equally-weighted ports is
+    equivalent to merging it into one double-weighted port fed the
+    *combined* supply of both: converge([A, A, B]) (2 ports of A, each
+    weight 1/3, i.e. up to 2*A of resource A available across both
+    slots) == converge([2*A, B], weights=[2/3, 1/3]) (1 port of 2*A,
+    weight 2/3). This holds unconditionally, for any A/B, not just in
+    some saturated regime -- an earlier version of this test compared
+    converge([A, A, B]) against converge([A, B], weights=[2/3, 1/3]),
+    which mismatches the total A supply available (A on one side, 2*A
+    on the other) and so only appeared to match in the specific case
+    where both sides happened to be fully bandwidth-saturated anyway.
+    Once the supply is scaled to match the weight, the two really are
+    the same allocation in general, just reported as 2 numbers vs. 1."""
+    # weights must be fractional bandwidth (sum to 1) per converger_explicit's
+    # own contract -- passing raw un-normalized counts like [2, 1] directly
+    # is NOT equivalent and gives a different (wrong) answer.
     weights = np.array([2 / 3, 1 / 3])
-    for a, b in [(0.7, 0.4), (1.0, 1.0), (5.0, 0.34), (0.6667, 1 / 3)]:
+    for a, b in [(0.7, 0.4), (1.0, 1.0), (5.0, 0.34), (0.6667, 1 / 3), (0.0, 0.5)]:
         duplicated = converger_explicit(np.array([a, a, b]))
-        weighted = converger_explicit(np.array([a, b]), weights=weights)
-        assert isclose(duplicated[0] + duplicated[1], weighted[0])
-        assert isclose(duplicated[2], weighted[1])
-
-
-def test_weighted_port_does_not_match_duplicated_ports_when_undersaturated():
-    """Outside full saturation, duplicating a port into two unweighted
-    ports is NOT equivalent to giving one port double the weight. At
-    a = b = 0.4: each duplicate port's own share is only 1/3, so 0.4
-    oversaturates it (every ratio is >= 1, so all three duplicate ports
-    are capped at their equal 1/3 share) -- but the single weighted port's
-    share is the larger 2/3, which 0.4 does NOT oversaturate (0.4 < 2/3),
-    so that port instead gets its full raw supply (0.4) with B (still
-    oversaturated at its own 1/3 share) taking the rest. Same total input
-    values, different outcome -- a real property of the greedy "give the
-    single most-undersaturated port its full supply first" resolution
-    order, not a bug, but it does mean weight-N and N duplicate unweighted
-    ports are only interchangeable once everything is fully bandwidth-
-    saturated (see the test above)."""
-    a, b = 0.4, 0.4
-    duplicated = converger_explicit(np.array([a, a, b]))
-    weighted = converger_explicit(np.array([a, b]), weights=np.array([2 / 3, 1 / 3]))
-    assert not isclose(duplicated[0] + duplicated[1], weighted[0])
-    assert isclose(duplicated[0] + duplicated[1], 2 / 3)  # capped at 2 * (1/3 share)
-    assert isclose(weighted[0], a)  # undersaturated relative to the larger 2/3 share
+        merged = converger_explicit(np.array([2 * a, b]), weights=weights)
+        assert isclose(duplicated[0] + duplicated[1], merged[0])
+        assert isclose(duplicated[2], merged[1])
 
 
 def test_converger_explicit_in3_cherrypick(in_vec3):
