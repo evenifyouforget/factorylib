@@ -1,47 +1,48 @@
 """Historical Wuling 1.2 -> 1.2d -> 1.2e recipe model.
 
-Ported from the retired ``tests/wuling/*`` scenario tests (``_helpers.py``'s
-hand-derived formula set, the most-refined link being
+Ported from the retired ``tests/wuling/*`` scenario tests
+(``_helpers.py``'s hand-derived formula set, the most-refined link being
 ``test_wuling_1p2e.py``'s ``_make_1p2e_formulas``) onto the current
-``Material``/``Recipe``/``factorylib.optimize.solve`` engine -- NOT from
-``factorylib.endfield.main``, which only ever modeled 1.4 and never modeled
-1.2e at all. This is deliberately sized to reproduce exactly the "headline"
-dollar figures those tests documented, not a full port of every scenario
-they exercised (their many per-formula ad-hoc caps like ``sc_cap_2`` or
-banned-formula variants aren't part of the core resource-graph progression,
-and the Xiranite/Jade Gourd event extensions are a separate, later model
-this doesn't attempt).
+``Material``/``Recipe``/``factorylib.optimize.solve`` engine. This is NOT
+ported from ``factorylib.endfield.main``, which only ever modeled 1.4 and
+never modeled 1.2e at all. It's deliberately sized to reproduce exactly the
+"headline" dollar figures those tests documented, not a full port of every
+scenario they exercised: their many per-formula ad-hoc caps (like
+``sc_cap_2``) or banned-formula variants aren't part of the core
+resource-graph progression, and the Xiranite/Jade Gourd event extensions
+are a separate, later model this doesn't attempt.
 
 One shared resource graph (``build_1p2e_recipes``) reproduces all three
-historical scenarios purely by varying its keyword arguments -- the 1.2 ->
-1.2d -> 1.2e lineage is genuinely the *same* resource graph, extended
-incrementally, not three different models:
+historical scenarios purely by varying its keyword arguments. The
+1.2 -> 1.2d -> 1.2e lineage is genuinely the *same* resource graph,
+extended incrementally, not three different models:
 
-- ``test_1p2e_full`` (206735/146): full 1.2e, both Purification Building and
-  Test Area Purification Node enabled, 1.2d supply/forge numbers.
+- ``test_1p2e_full`` (206735/146): full 1.2e, both Purification Building
+  and Test Area Purification Node enabled, 1.2d supply/forge numbers.
 - ``test_1p2e_equiv_1p2d`` (2823/2, == the historical 1.2d baseline): same
-  supply, but ``purify_node_max_multiples=0`` -- without the Test Area
-  Purification Node, 1.2e collapses to 1.2d exactly.
+  supply, but with ``purify_node_max_multiples=0`` -- without the Test
+  Area Purification Node, 1.2e collapses to 1.2d exactly.
 - ``test_1p2e_equiv_1p2_full`` (2229/2, == the historical 1.2 "full"
   baseline): 1.2 full's own (smaller) supply/forge numbers, again with
   ``purify_node_max_multiples=0``.
 
-This model has no power/Watt dimension at all (every historical formula is
-a pure resource conversion), unlike ``main.py``'s 1.4 model.
+This model has no power/Watt dimension at all, since every historical
+formula is a pure resource conversion, unlike ``main.py``'s 1.4 model.
 
 Forge of the Sky allocation: the original test scaffolding
 (``_helpers.py``'s ``_search``) brute-forces "z forges produce Xiranite,
 the rest cap Heavy Xiranite's rate" as an outer Python loop over
 ``max_forges + 1`` candidates. Here that split is a proper MILP choice
-instead: a shared ``ForgeAllocation`` counted resource (supply =
-``max_forges``), consumed by both the "Forge of the Sky: Xiranite" recipe
-and the "Heavy Xiranite" recipe itself via the counter/Assign-Allocation
-pattern ``main.py``'s own ``std_building`` uses for its ``integer_inputs``.
+instead. A shared ``ForgeAllocation`` counted resource (supply =
+``max_forges``) is consumed by both the "Forge of the Sky: Xiranite"
+recipe and the "Heavy Xiranite" recipe itself, via the
+counter/Assign-Allocation pattern ``main.py``'s own ``std_building`` uses
+for its ``integer_inputs``.
 
 Metatransfer is similarly converted from ``_helpers.py``'s
 ``METATRANSFERS`` outer-loop choice (either +50 Originium Ore or +25
-Ferrium Ore) into a one-shot ``MetatransferAllocation`` MILP choice between
-two recipes, mirroring ``main.py``'s own metatransfer-option loop.
+Ferrium Ore) into a one-shot ``MetatransferAllocation`` MILP choice
+between two recipes, mirroring ``main.py``'s own metatransfer-option loop.
 """
 
 from __future__ import annotations

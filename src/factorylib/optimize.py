@@ -4,13 +4,13 @@ Given a set of :class:`~factorylib.material.Recipe` objects (each an
 expression over :class:`~factorylib.material.Material` leaves) and a single
 material to maximize, builds a recipe/material incidence matrix and solves
 for the non-negative (optionally integer-constrained) run count of each
-recipe that maximizes net production of the target material, subject to
-every other material's net balance staying non-negative.
+recipe that maximizes net production of the target material, subject to every
+other material's net balance staying non-negative.
 
-This supersedes the previous ``Formula``-based ``maximize_dollar`` (a
-plain-LP, no-recipe-algebra dollar maximizer with no MILP/integer support)
--- ported and refactored from ``factorylib.endfield.main``'s monolithic
-``optimize()``, split into: this module's pure "solve" step, then
+This supersedes the previous ``Formula``-based ``maximize_dollar``, a
+plain-LP, no-recipe-algebra dollar maximizer with no MILP/integer support.
+It's ported and refactored from ``factorylib.endfield.main``'s monolithic
+``optimize()``, split into this module's pure "solve" step, then
 :mod:`factorylib.report` (text report) and :mod:`factorylib.diagram`
 (Graphviz rendering) as separate consumers of the same result.
 """

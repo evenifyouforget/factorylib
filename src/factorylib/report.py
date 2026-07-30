@@ -1,10 +1,11 @@
-"""Render an :class:`~factorylib.optimize.OptimizeResult` as a markdown-ish
-text report: solver status, which recipes ran at what multiple, and a
-per-material balance sheet of where each material's supply came from.
+"""Render an :class:`~factorylib.optimize.OptimizeResult` as a
+markdown-ish text report: solver status, which recipes ran at what
+multiple, and a per-material balance sheet of where each material's
+supply came from.
 
 Ported (and split out) from ``factorylib.endfield.main``'s monolithic
-``optimize()``, which built this same report inline via ``print()`` calls
-interleaved with graph construction.
+``optimize()``, which built this same report inline via ``print()``
+calls interleaved with graph construction.
 """
 
 from __future__ import annotations

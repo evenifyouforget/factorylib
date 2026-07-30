@@ -116,19 +116,20 @@ def test_converger_explicit_zero_weight():
     "a, b", [(0.7, 0.4), (1.0, 1.0), (5.0, 0.34), (0.6667, 1 / 3), (0.0, 0.5)]
 )
 def test_duplicated_port_matches_a_merged_double_weight_double_supply_port(a, b):
-    """Splitting a resource across two equally-weighted ports is
-    equivalent to merging it into one double-weighted port fed the
-    *combined* supply of both: converge([A, A, B]) (2 ports of A, each
-    weight 1/3, i.e. up to 2*A of resource A available across both
-    slots) == converge([2*A, B], weights=[2/3, 1/3]) (1 port of 2*A,
-    weight 2/3). This holds unconditionally, for any A/B, not just in
-    some saturated regime -- an earlier version of this test compared
-    converge([A, A, B]) against converge([A, B], weights=[2/3, 1/3]),
-    which mismatches the total A supply available (A on one side, 2*A
-    on the other) and so only appeared to match in the specific case
-    where both sides happened to be fully bandwidth-saturated anyway.
-    Once the supply is scaled to match the weight, the two really are
-    the same allocation in general, just reported as 2 numbers vs. 1."""
+    """Splitting a resource across two equally-weighted ports is equivalent
+    to merging it into one double-weighted port fed the *combined* supply
+    of both: converge([A, A, B]) (2 ports of A, each weight 1/3, i.e. up to
+    2*A of resource A available across both slots) == converge([2*A, B],
+    weights=[2/3, 1/3]) (1 port of 2*A, weight 2/3).
+
+    This holds unconditionally, for any A/B, not just in some saturated
+    regime. An earlier version of this test compared converge([A, A, B])
+    against converge([A, B], weights=[2/3, 1/3]), which mismatches the
+    total A supply available (A on one side, 2*A on the other), so it only
+    appeared to match in the specific case where both sides happened to be
+    fully bandwidth-saturated anyway. Once the supply is scaled to match
+    the weight, the two really are the same allocation in general, just
+    reported as 2 numbers vs. 1."""
     # weights must be fractional bandwidth (sum to 1) per converger_explicit's
     # own contract -- passing raw un-normalized counts like [2, 1] directly
     # is NOT equivalent and gives a different (wrong) answer.

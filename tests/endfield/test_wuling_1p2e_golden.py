@@ -3,8 +3,8 @@
 Reproduces the "headline" $ figures documented across the retired
 `tests/wuling/*` Wuling 1.2 -> 1.2d -> 1.2e model lineage (see that
 module's own docstring for exactly which historical test each one came
-from), purely by varying `build_1p2e_recipes`'s keyword arguments -- no
-model-version branching needed, since one resource graph covers all
+from), purely by varying `build_1p2e_recipes`'s keyword arguments. No
+model-version branching is needed, since one resource graph covers all
 three by construction.
 """
 

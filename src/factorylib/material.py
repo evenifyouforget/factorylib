@@ -3,47 +3,48 @@
 This is the core modeling layer used to describe a production system: a
 handful of ``Material`` instances (resources, intermediates, virtual
 bookkeeping quantities like "$" or power) combined via ``+`` / ``-`` / ``*``
-into linear expressions, and ``Recipe`` objects that pair a (materials in) -->
-(materials out) expression with a name and optional run-count bounds.
+into linear expressions, and ``Recipe`` objects that pair a
+(materials in) --> (materials out) expression with a name and optional
+run-count bounds.
 
 The only legal shape of a Material expression is a linear combination
 ``c_1*m_1 + c_2*m_2 + ... + c_n*m_n``, where each ``c_i`` is a plain number
-and each ``m_i`` is an elementary ``Material`` leaf -- there is no other way
-to legally combine materials (multiplying two Material expressions together
-is never legal, since neither side is a plain number). ``MaterialExpression``
-is the abstract base for the two concrete shapes this takes: a bare
-``Material`` (the trivial one-term combination ``1*self``) or a
+and each ``m_i`` is an elementary ``Material`` leaf. There is no other way to
+legally combine materials: multiplying two Material expressions together is
+never legal, since neither side is a plain number. ``MaterialExpression`` is
+the abstract base for the two concrete shapes this takes -- a bare
+``Material`` (the trivial one-term combination ``1*self``), or a
 ``LinearCombinationMaterial`` (any other combination, stored flat as a
 ``{Material: coefficient}`` dict rather than a tree). Arithmetic always
-normalizes to one of these two -- adding/multiplying always merges into (or
+normalizes to one of these two: adding/multiplying always merges into (or
 rebuilds) a flat dict, immediately combining matching terms and folding
 constants, rather than building up a nested tree that would need a separate
 flattening pass later. ``substitute()`` evaluates an expression against a
 mapping from each leaf ``Material`` to a concrete value (typically a numpy
 unit basis vector, when building the recipe matrix for
-:mod:`factorylib.optimize`) -- generically, via ``terms()``, so neither
+:mod:`factorylib.optimize`), generically, via ``terms()`` -- so neither
 concrete subclass needs its own ``substitute()``/``gather_materials()``.
 
 Because the same expression is evaluated over ``Material`` leaves, plain
 numbers, and numpy arrays interchangeably, the value type flowing through
-``substitute``/the operator overloads is genuinely dynamic. Rather than force
-an imprecise or overly-broad Union everywhere, the few dynamic seams are
-typed ``Any`` explicitly -- a deliberate, narrow strictness cut rather than
-an oversight.
+``substitute``/the operator overloads is genuinely dynamic. Rather than
+force an imprecise or overly-broad Union everywhere, the few dynamic seams
+are typed ``Any`` explicitly. That's a deliberate, narrow strictness cut,
+not an oversight.
 
-The flat representation makes printing straightforward and always correct:
+The flat representation makes printing straightforward and always correct.
 ``LinearCombinationMaterial.__str__`` always shows a term's coefficient and
-unit (e.g. ``"3/min Ore"``, even at coefficient 1: ``"1/min Ore"``) and
+unit (e.g. ``"3/min Ore"``, even at coefficient 1: ``"1/min Ore"``), and
 always renders a negative coefficient as ``" - "`` rather than ``" + -"``,
-with no special-casing or sign-detection needed -- every term's sign is
-already known exactly, since matching terms were already merged when the
+with no special-casing or sign-detection needed, since every term's sign is
+already known exactly -- matching terms were already merged when the
 expression was built. An earlier version tried to bolt this kind of
-prettification onto a tree of ``AddMaterial``/``MulMaterial`` nodes (plus a
-separate ``simplify()`` pass to flatten nested trees so sign-detection could
-see through them), which produced inconsistent output whenever the detection
-didn't quite line up with how an expression was actually built -- e.g.
-``"30 x Foo + -Bar + Baz x -40 x 2"``. Storing terms flat from the start
-removes the class of bug entirely, rather than papering over it.
+prettification onto a tree of ``AddMaterial``/``MulMaterial`` nodes, plus a
+separate ``simplify()`` pass to flatten nested trees so sign-detection
+could see through them. That produced inconsistent output whenever the
+detection didn't quite line up with how an expression was actually built,
+e.g. ``"30 x Foo + -Bar + Baz x -40 x 2"``. Storing terms flat from the
+start removes the class of bug entirely, rather than papering over it.
 """
 
 from __future__ import annotations
@@ -63,13 +64,14 @@ _unique_counter = 0
 
 
 class MaterialExpression:
-    """Abstract base for anything usable in a linear Recipe expression: a
-    linear combination of elementary ``Material`` leaves. The two concrete
-    shapes are ``Material`` itself (a trivial one-term combination) and
-    ``LinearCombinationMaterial`` (any other combination) -- see module
-    docstring. Concrete subclasses only need to implement ``terms()`` and
-    ``__str__``; arithmetic, ``substitute()``, and ``gather_materials()``
-    are all defined here generically in terms of ``terms()``.
+    """Abstract base for anything usable in a linear Recipe expression:
+    a linear combination of elementary ``Material`` leaves. The two
+    concrete shapes are ``Material`` itself (a trivial one-term
+    combination) and ``LinearCombinationMaterial`` (any other combination
+    -- see module docstring). Concrete subclasses only need to implement
+    ``terms()`` and ``__str__``; arithmetic, ``substitute()``, and
+    ``gather_materials()`` are all defined here generically in terms of
+    ``terms()``.
     """
 
     def terms(self) -> dict["Material", Any]:
@@ -131,10 +133,11 @@ class MaterialExpression:
 
 
 def _combination(terms: dict["Material", Any]) -> MaterialExpression:
-    """Build the canonical MaterialExpression for `terms`: a bare Material
-    if it reduces to exactly one term at coefficient 1, otherwise a
-    LinearCombinationMaterial (possibly with zero terms, representing the
-    zero expression -- e.g. a 0 W building's power draw)."""
+    """Build the canonical MaterialExpression for `terms`: a bare
+    Material if it reduces to exactly one term at coefficient 1,
+    otherwise a LinearCombinationMaterial (possibly with zero terms,
+    representing the zero expression, e.g. a 0 W building's power
+    draw)."""
     nonzero = {material: coeff for material, coeff in terms.items() if coeff != 0}
     if len(nonzero) == 1:
         ((material, coeff),) = nonzero.items()

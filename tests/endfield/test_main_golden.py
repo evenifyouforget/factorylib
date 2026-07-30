@@ -1,16 +1,17 @@
 """Golden regression + CLI smoke tests for factorylib.endfield.main.
 
-main.py is the design oracle: its ~180 Recipe declarations encode the full
-Endfield 1.4 production model (buildings, sell prices, the Prosperity
-Points mixed-objective overlay). These tests don't re-derive the "correct"
-answer independently -- they pin the actual $-optimal objective value this
-reconciled code produces, so any future change to the model or the solver
-plumbing that shifts the answer gets caught.
+main.py is the design oracle: its ~180 Recipe declarations encode the
+full Endfield 1.4 production model (buildings, sell prices, the
+Prosperity Points mixed-objective overlay). These tests don't re-derive
+the "correct" answer independently. Instead, they pin the actual
+$-optimal objective value this reconciled code produces, so any future
+change to the model or the solver plumbing that shifts the answer gets
+caught.
 
-The golden figures below were captured by actually running the reconciled
-CLI (not picked from memory or the pre-refactor code) and were also
-cross-checked byte-for-byte against the pre-refactor main.py's stdout
-report during the library reconciliation.
+The golden figures below were captured by actually running the
+reconciled CLI (not picked from memory or the pre-refactor code), and
+were also cross-checked byte-for-byte against the pre-refactor main.py's
+stdout report during the library reconciliation.
 """
 
 from __future__ import annotations
