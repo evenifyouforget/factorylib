@@ -32,6 +32,12 @@ def main() -> None:
     parser.add_argument('-f', '--force-fractions', action='store_true', help='Forces all printed quantities to be an exact fraction, even if the original quantity may not be near any simple fraction. Results in an approximately satisfiable solution that is easier to build.')
     parser.add_argument('-t', '--target', choices=['sellable', 'mixed'], help='Which goal to optimize for')
     parser.add_argument('-o', '--graph-outfile', help='File to render graph to')
+    parser.add_argument('--originium-ore', type=float, default=540.0, help='Originium Ore supply, in items/min')
+    parser.add_argument('--ferrium-ore', type=float, default=120.0, help='Ferrium Ore supply, in items/min')
+    parser.add_argument('--cuprium-ore', type=float, default=420.0, help='Cuprium Ore supply, in items/min')
+    parser.add_argument('--inergen', type=float, default=460.0, help='Inergen supply, in items/min')
+    parser.add_argument('--xiragen', type=float, default=100.0, help='Xiragen supply, in items/min')
+    parser.add_argument('--test-area-max-multiples', type=float, default=0.0, help='Cap on the Test Area Purification Node recipe (30 Sewage -> 1 Xircon Effluent). 0 (the default) disables it entirely.')
     args = parser.parse_args()
     PMIN = '/min'
     goal_material = WulingStockBill = Material(name='$', unit=PMIN, tags=VIRTUAL)
@@ -158,8 +164,7 @@ def main() -> None:
     AcridENV = Material(name='Acrid ENV', tags=VIRTUAL)
     XiraniteENV = Material(name='Xiranite ENV', tags=VIRTUAL)
     all_recipes = []
-    all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 100 * Xiragen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
-    #all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
+    all_recipes.append(Recipe(expression=args.originium_ore * OriginiumOre + args.ferrium_ore * FerriumOre + args.cuprium_ore * CupriumOre + args.inergen * Inergen + args.xiragen * Xiragen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
     def std_building(building_name, power):
         def make_recipe(inputs, outputs, /, max_multiples=inf, integer_only=False, integer_inputs=None):
             power_str = f' ({power} W)' if power else ''
@@ -348,8 +353,8 @@ def main() -> None:
     std_sell(HetonitePart, 48 * WulingStockBill)
     std_sell(SCWulingBattery, 54 * WulingStockBill)
     std_sell(PyrrolitePart, 70 * WulingStockBill)
-    std_test_area = std_building('Test Area Purification Node', 0)  # noqa: F841
-    #std_test_area(30 * Sewage, XirconEffluent, max_multiples=12)
+    std_test_area = std_building('Test Area Purification Node', 0)
+    std_test_area(30 * Sewage, XirconEffluent, max_multiples=args.test_area_max_multiples)
     if args.target == 'mixed':
         goal_material = PerformancePoint = Material(name='pp', tags=VIRTUAL+HIDDEN)
         def pp_satisfaction(target_mat, mat_amount, pp_worth):

@@ -90,3 +90,57 @@ def test_graph_outfile_renders_file(tmp_path, capsys):
     assert outfile.exists()
     assert (tmp_path / "graph.pdf").exists()
 
+
+def test_xiragen_amount_is_configurable_without_editing_source(capsys):
+    """--xiragen used to require commenting/uncommenting a line in
+    Starting Materials by hand. Setting it to 0 reproduces the historical
+    pre-Xiragen-restoration figure exactly."""
+    output = _run_main(["-t", "sellable", "--xiragen", "0"], capsys)
+    assert _extract_score(output) == pytest.approx(1921.663987500002)
+
+
+def test_ore_and_inergen_supply_are_configurable(capsys):
+    """Every Starting Materials amount is a CLI argument now, not a
+    hardcoded literal -- zeroing them all out still solves (Metatransfer/
+    Forge of the Sky allocations are independent of raw ore supply) but
+    for a much smaller objective than the default supply."""
+    output = _run_main(
+        [
+            "-t",
+            "sellable",
+            "--originium-ore",
+            "0",
+            "--ferrium-ore",
+            "0",
+            "--cuprium-ore",
+            "0",
+            "--inergen",
+            "0",
+            "--xiragen",
+            "0",
+        ],
+        capsys,
+    )
+    assert "# Result 0:" in output
+    assert _extract_score(output) == pytest.approx(188.02083333333346)
+
+
+def test_test_area_purification_node_disabled_by_default(capsys):
+    """The recipe is always present now (so its Allocation material still
+    shows up, at net 0, in the material balance sheet), but must never
+    actually run: 0 max_multiples by default."""
+    output = _run_main(["-t", "sellable"], capsys)
+    assert "multiples of Test Area Purification Node" not in output
+
+
+def test_test_area_max_multiples_enables_a_strictly_additional_option(capsys):
+    """Enabling the Test Area Purification Node used to require
+    uncommenting a line by hand. It's a real, additional production
+    option -- enabling it can only help or leave the $-optimum unchanged,
+    never hurt."""
+    baseline = _extract_score(_run_main(["-t", "sellable"], capsys))
+    enabled_output = _run_main(
+        ["-t", "sellable", "--test-area-max-multiples", "12"], capsys
+    )
+    assert "multiples of Test Area Purification Node" in enabled_output
+    assert _extract_score(enabled_output) >= baseline
