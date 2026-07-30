@@ -245,7 +245,9 @@ class Recipe:
         return gather_materials(self.expression)
 
 
-def gather_materials(expr: Any) -> set[Material]:
+def gather_materials(
+    expr: MaterialExpression | Recipe | list[Any] | int | float,
+) -> set[Material]:
     if isinstance(expr, list):
         result: set[Material] = set()
         for ex in expr:
@@ -253,4 +255,4 @@ def gather_materials(expr: Any) -> set[Material]:
         return result
     if isinstance(expr, (int, float)):
         return set()
-    return expr.gather_materials()  # type: ignore[no-any-return]
+    return expr.gather_materials()
