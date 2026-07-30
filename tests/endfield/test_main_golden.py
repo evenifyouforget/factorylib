@@ -12,6 +12,17 @@ The golden figures below were captured by actually running the
 reconciled CLI (not picked from memory or the pre-refactor code), and
 were also cross-checked byte-for-byte against the pre-refactor main.py's
 stdout report during the library reconciliation.
+
+MIXED_GOLDEN_OBJECTIVE was recaptured at 18749.06959502713 (previously
+18748.097174815644) after fixing factorylib.optimize.solve() to pass
+mip_rel_gap=1e-9 to scipy's milp(). The "mixed" target's many integer
+Award-Points-tier recipes gave HiGHS's default relative gap (~1e-4)
+enough room to stop at a solution merely close to optimal rather than
+the true one -- confirmed by reproducing the same old, short-by-~0.97
+figure even from the pre-fix *unmodified* model with a manually tightened
+gap, and confirmed as the true optimum by getting the same 18749.0696...
+figure regardless of whether an economically-irrelevant extra recipe
+(the Test Area Purification Node, added by a later commit) is present.
 """
 
 from __future__ import annotations
@@ -23,7 +34,7 @@ import pytest
 from factorylib.endfield.main import main
 
 SELLABLE_GOLDEN_OBJECTIVE = 2293.8239875000017
-MIXED_GOLDEN_OBJECTIVE = 18748.097174815644
+MIXED_GOLDEN_OBJECTIVE = 18749.06959502713
 
 _SCORE_RE = re.compile(r"Maximized score: (\S+)")
 
@@ -78,3 +89,4 @@ def test_graph_outfile_renders_file(tmp_path, capsys):
     _run_main(["-t", "sellable", "-o", str(outfile)], capsys)
     assert outfile.exists()
     assert (tmp_path / "graph.pdf").exists()
+
