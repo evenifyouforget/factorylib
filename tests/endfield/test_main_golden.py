@@ -144,3 +144,28 @@ def test_test_area_max_multiples_enables_a_strictly_additional_option(capsys):
     )
     assert "multiples of Test Area Purification Node" in enabled_output
     assert _extract_score(enabled_output) >= baseline
+
+
+def test_jincao_disabled_by_default(capsys):
+    """The Jincao production chain (planting, seed-picking, bottling) is
+    always present in the model -- so "Jincao Drink"/"Jincao Tea" as bare
+    material names still show up (at net 0) in the balance sheet -- but
+    the Sell and Jincao->Carbon refine recipes that would make any of it
+    worthwhile are absent unless explicitly enabled."""
+    output = _run_main(["-t", "sellable"], capsys)
+    assert "multiples of Sell (0 W): Jincao Drink" not in output
+    assert "multiples of Sell (0 W): Jincao Tea" not in output
+    assert "multiples of Refining Unit (5 W): 30/min Jincao -->" not in output
+
+
+def test_enable_jincao_ties_with_yazhen_rather_than_improving_on_it(capsys):
+    """Jincao Drink/Tea sell for the same $ as Yazhen Syringe C/A (16 and
+    22 respectively) via the same Filling/Packaging Unit capacity, so
+    enabling Jincao doesn't change the $-optimum at all -- it only gives
+    the solver more (economically identical, harder-to-build) ways to
+    reach the same number."""
+    baseline = _extract_score(_run_main(["-t", "sellable"], capsys))
+    with_jincao = _extract_score(
+        _run_main(["-t", "sellable", "--enable-jincao"], capsys)
+    )
+    assert with_jincao == pytest.approx(baseline)

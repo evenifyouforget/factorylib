@@ -99,6 +99,21 @@ def main() -> None:
             "the true in-game value."
         ),
     )
+    parser.add_argument(
+        "-J",
+        "--enable-jincao",
+        action="store_true",
+        help=(
+            "Enable the Jincao Drink/Tea sell recipes and the Jincao -> "
+            "Carbon refine option. Off by default: Jincao ties with Yazhen "
+            "economically (same Filling/Packaging Unit capacity, same $ "
+            "per part), so enabling it just lets the solver return mixed "
+            "Yazhen/Jincao solutions worth the same $ as a pure-Yazhen one "
+            "but harder to build. Jincao would only be a genuine "
+            "improvement if sharing a reactor with Yazhen saved power, "
+            "which this model doesn't represent."
+        ),
+    )
     args = parser.parse_args()
     PMIN = "/min"
     goal_material = WulingStockBill = Material(name="$", unit=PMIN, tags=VIRTUAL)
@@ -321,7 +336,8 @@ def main() -> None:
     std_refine(30 * DenseOriginiumPowder, 30 * DenseOrigocrustPowder)
     std_refine(30 * Buckflower, 30 * Carbon)
     std_refine(30 * Sandleaf, 30 * Carbon)
-    # std_refine(30 * Jincao, 60 * Carbon)
+    if args.enable_jincao:
+        std_refine(30 * Jincao, 60 * Carbon)
     std_refine(30 * Yazhen, 60 * Carbon)
     std_shred = std_building("Shredding Unit", 5)
     std_shred(30 * Cuprium, 30 * CupriumPowder)
@@ -510,9 +526,11 @@ def main() -> None:
     std_sell(CupriumPart, WulingStockBill)
     std_sell(SeparatorCore, WulingStockBill)
     std_sell(YazhenSyringeC, 16 * WulingStockBill)
-    # std_sell(JincaoDrink, 16 * WulingStockBill)
+    if args.enable_jincao:
+        std_sell(JincaoDrink, 16 * WulingStockBill)
     std_sell(YazhenSyringeA, 22 * WulingStockBill)
-    # std_sell(JincaoTea, 22 * WulingStockBill)
+    if args.enable_jincao:
+        std_sell(JincaoTea, 22 * WulingStockBill)
     std_sell(LCWulingBattery, 25 * WulingStockBill)
     std_sell(HeavyXiranite, 27 * WulingStockBill)
     std_sell(HetonitePart, 48 * WulingStockBill)
