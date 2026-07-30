@@ -32,20 +32,6 @@ source = ["factorylib"]
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 
-[tool.ruff.lint.per-file-ignores]
-# main.py's ~180 endfield Recipe/Material declarations are deliberately
-# kept one-per-line, matching the design oracle's own authored style for
-# diffability against it, even where that exceeds the line-length limit.
-# Wrapping them mechanically would be a large diff for a purely cosmetic
-# change, and risks introducing a transcription error into the economics.
-"src/factorylib/endfield/main.py" = ["E501"]
-
-[tool.ruff.format]
-# Same rationale as the E501 ignore above: reformatting main.py (quote style,
-# multi-line call wrapping) would make it unrecognizable next to the design
-# oracle's own authored style, for a purely cosmetic gain.
-exclude = ["src/factorylib/endfield/main.py"]
-
 [tool.mypy]
 python_version = "3.12"
 strict = true
