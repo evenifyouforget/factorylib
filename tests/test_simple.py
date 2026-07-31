@@ -4,6 +4,11 @@ from numpy import isclose
 
 from factorylib.simple import converger_explicit
 
+IN2_TUPLES = [(i / 10, j / 10) for i in range(11) for j in range(11)]
+IN3_TUPLES = [
+    (i / 10, j / 10, k / 10) for i in range(11) for j in range(11) for k in range(11)
+]
+
 
 def test_always_passes():
     assert True
@@ -14,12 +19,14 @@ def test_always_fails():
     assert False
 
 
+@pytest.mark.parametrize("in_vec2", IN2_TUPLES)
 def test_converger_explicit_in2_total_output(in_vec2):
     in_flow = np.array(in_vec2)
     out_flow = converger_explicit(in_flow)
     assert isclose(np.sum(out_flow), min(np.sum(in_flow), 1))
 
 
+@pytest.mark.parametrize("in_vec2", IN2_TUPLES)
 def test_converger_explicit_in2_output_not_saturated(in_vec2):
     in_flow = np.array(in_vec2)
     if np.sum(in_flow) > 1:
@@ -28,6 +35,7 @@ def test_converger_explicit_in2_output_not_saturated(in_vec2):
     assert np.all(isclose(out_flow, in_flow))
 
 
+@pytest.mark.parametrize("in_vec2", IN2_TUPLES)
 def test_converger_explicit_in2_input_all_saturated(in_vec2):
     in_flow = np.array(in_vec2)
     a = 1 / 2
@@ -37,6 +45,7 @@ def test_converger_explicit_in2_input_all_saturated(in_vec2):
     assert np.all(isclose(out_flow, [a] * 2))
 
 
+@pytest.mark.parametrize("in_vec2", IN2_TUPLES)
 def test_converger_explicit_in2_general(in_vec2):
     in_flow = np.array(in_vec2)
     a, b = in_flow
@@ -46,12 +55,14 @@ def test_converger_explicit_in2_general(in_vec2):
     assert np.all(isclose(out_flow, expect_out_flow))
 
 
+@pytest.mark.parametrize("in_vec3", IN3_TUPLES)
 def test_converger_explicit_in3_total_output(in_vec3):
     in_flow = np.array(in_vec3)
     out_flow = converger_explicit(in_flow)
     assert isclose(np.sum(out_flow), min(np.sum(in_flow), 1))
 
 
+@pytest.mark.parametrize("in_vec3", IN3_TUPLES)
 def test_converger_explicit_in3_output_not_saturated(in_vec3):
     in_flow = np.array(in_vec3)
     if np.sum(in_flow) > 1:
@@ -60,6 +71,7 @@ def test_converger_explicit_in3_output_not_saturated(in_vec3):
     assert np.all(isclose(out_flow, in_flow))
 
 
+@pytest.mark.parametrize("in_vec3", IN3_TUPLES)
 def test_converger_explicit_in3_input_all_saturated(in_vec3):
     in_flow = np.array(in_vec3)
     a = 1 / 3
@@ -69,13 +81,14 @@ def test_converger_explicit_in3_input_all_saturated(in_vec3):
     assert np.all(isclose(out_flow, [a] * 3))
 
 
-def test_converger_explicit_in3_2_of_3(in_vec2):
+@pytest.mark.parametrize("zero_pos", range(3))
+@pytest.mark.parametrize("in_vec2", IN2_TUPLES)
+def test_converger_explicit_in3_2_of_3(in_vec2, zero_pos):
     in_flow_2 = np.array(in_vec2)
     out_flow_2 = converger_explicit(in_flow_2)
-    for zero_pos in range(3):
-        in_flow = np.insert(in_flow_2, zero_pos, 0)
-        expected = np.insert(out_flow_2, zero_pos, 0)
-        assert np.all(isclose(converger_explicit(in_flow), expected))
+    in_flow = np.insert(in_flow_2, zero_pos, 0)
+    expected = np.insert(out_flow_2, zero_pos, 0)
+    assert np.all(isclose(converger_explicit(in_flow), expected))
 
 
 def test_converger_explicit_2d_raises():
@@ -99,32 +112,37 @@ def test_converger_explicit_zero_weight():
     assert np.allclose(out, [0.8, 0.0])
 
 
-def test_duplicated_port_matches_a_merged_double_weight_double_supply_port():
-    """Splitting a resource across two equally-weighted ports is
-    equivalent to merging it into one double-weighted port fed the
-    *combined* supply of both: converge([A, A, B]) (2 ports of A, each
-    weight 1/3, i.e. up to 2*A of resource A available across both
-    slots) == converge([2*A, B], weights=[2/3, 1/3]) (1 port of 2*A,
-    weight 2/3). This holds unconditionally, for any A/B, not just in
-    some saturated regime -- an earlier version of this test compared
-    converge([A, A, B]) against converge([A, B], weights=[2/3, 1/3]),
-    which mismatches the total A supply available (A on one side, 2*A
-    on the other) and so only appeared to match in the specific case
-    where both sides happened to be fully bandwidth-saturated anyway.
-    Once the supply is scaled to match the weight, the two really are
-    the same allocation in general, just reported as 2 numbers vs. 1."""
+@pytest.mark.parametrize(
+    "a, b", [(0.7, 0.4), (1.0, 1.0), (5.0, 0.34), (0.6667, 1 / 3), (0.0, 0.5)]
+)
+def test_duplicated_port_matches_a_merged_double_weight_double_supply_port(a, b):
+    """Splitting a resource across two equally-weighted ports is equivalent
+    to merging it into one double-weighted port fed the *combined* supply
+    of both: converge([A, A, B]) (2 ports of A, each weight 1/3, i.e. up to
+    2*A of resource A available across both slots) == converge([2*A, B],
+    weights=[2/3, 1/3]) (1 port of 2*A, weight 2/3).
+
+    This holds unconditionally, for any A/B, not just in some saturated
+    regime. An earlier version of this test compared converge([A, A, B])
+    against converge([A, B], weights=[2/3, 1/3]), which mismatches the
+    total A supply available (A on one side, 2*A on the other), so it only
+    appeared to match in the specific case where both sides happened to be
+    fully bandwidth-saturated anyway. Once the supply is scaled to match
+    the weight, the two really are the same allocation in general, just
+    reported as 2 numbers vs. 1."""
     # weights must be fractional bandwidth (sum to 1) per converger_explicit's
     # own contract -- passing raw un-normalized counts like [2, 1] directly
     # is NOT equivalent and gives a different (wrong) answer.
     weights = np.array([2 / 3, 1 / 3])
-    for a, b in [(0.7, 0.4), (1.0, 1.0), (5.0, 0.34), (0.6667, 1 / 3), (0.0, 0.5)]:
-        duplicated = converger_explicit(np.array([a, a, b]))
-        merged = converger_explicit(np.array([2 * a, b]), weights=weights)
-        assert isclose(duplicated[0] + duplicated[1], merged[0])
-        assert isclose(duplicated[2], merged[1])
+    duplicated = converger_explicit(np.array([a, a, b]))
+    merged = converger_explicit(np.array([2 * a, b]), weights=weights)
+    assert isclose(duplicated[0] + duplicated[1], merged[0])
+    assert isclose(duplicated[2], merged[1])
 
 
-def test_converger_explicit_in3_cherrypick(in_vec3):
+@pytest.mark.parametrize("a_pos", range(3))
+@pytest.mark.parametrize("in_vec3", IN3_TUPLES)
+def test_converger_explicit_in3_cherrypick(in_vec3, a_pos):
     a, b, c = in_vec3
     if not 0 < a < min([1 / 3, b, c]):
         pytest.skip("Test does not cover this range")
@@ -139,7 +157,6 @@ def test_converger_explicit_in3_cherrypick(in_vec3):
     subproblem_in_flow_2 = np.array([b, c]) / subproblem_scale
     in_flow_2 = np.array([b, c])
     out_flow_2 = converger_explicit(subproblem_in_flow_2) * subproblem_scale
-    for a_pos in range(3):
-        in_flow = np.insert(in_flow_2, a_pos, a)
-        expected = np.insert(out_flow_2, a_pos, a)
-        assert np.all(isclose(converger_explicit(in_flow), expected))
+    in_flow = np.insert(in_flow_2, a_pos, a)
+    expected = np.insert(out_flow_2, a_pos, a)
+    assert np.all(isclose(converger_explicit(in_flow), expected))

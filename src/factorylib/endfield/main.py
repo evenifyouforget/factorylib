@@ -9,7 +9,13 @@ from factorylib.optimize import solve
 from factorylib.report import print_report
 
 
-def optimize(all_materials, all_recipes, material_to_maximize, force_fractions=False, graph_outfile=None):
+def optimize(
+    all_materials,
+    all_recipes,
+    material_to_maximize,
+    force_fractions=False,
+    graph_outfile=None,
+):
     """Solve, print the report, and (if requested) render a Graphviz diagram.
 
     Thin orchestration over the reconciled library: :func:`factorylib.optimize.solve`
@@ -29,165 +35,319 @@ def optimize(all_materials, all_recipes, material_to_maximize, force_fractions=F
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('-f', '--force-fractions', action='store_true', help='Forces all printed quantities to be an exact fraction, even if the original quantity may not be near any simple fraction. Results in an approximately satisfiable solution that is easier to build.')
-    parser.add_argument('-t', '--target', choices=['sellable', 'mixed'], help='Which goal to optimize for')
-    parser.add_argument('-o', '--graph-outfile', help='File to render graph to')
+    parser.add_argument(
+        "-f",
+        "--force-fractions",
+        action="store_true",
+        help=(
+            "Forces all printed quantities to be an exact fraction, even if "
+            "the original quantity may not be near any simple fraction. "
+            "Results in an approximately satisfiable solution that is "
+            "easier to build."
+        ),
+    )
+    parser.add_argument(
+        "-t",
+        "--target",
+        choices=["sellable", "mixed"],
+        help="Which goal to optimize for",
+    )
+    parser.add_argument("-o", "--graph-outfile", help="File to render graph to")
+    parser.add_argument(
+        "-O",
+        "--originium-ore",
+        type=float,
+        default=540.0,
+        help="Originium Ore supply, in items/min",
+    )
+    parser.add_argument(
+        "-F",
+        "--ferrium-ore",
+        type=float,
+        default=120.0,
+        help="Ferrium Ore supply, in items/min",
+    )
+    parser.add_argument(
+        "-C",
+        "--cuprium-ore",
+        type=float,
+        default=420.0,
+        help="Cuprium Ore supply, in items/min",
+    )
+    parser.add_argument(
+        "-I",
+        "--inergen",
+        type=float,
+        default=460.0,
+        help="Inergen supply, in items/min",
+    )
+    parser.add_argument(
+        "-X",
+        "--xiragen",
+        type=float,
+        default=100.0,
+        help="Xiragen supply, in items/min",
+    )
+    parser.add_argument(
+        "-T",
+        "--test-area-max-multiples",
+        type=float,
+        default=0.0,
+        help=(
+            "Cap on the Test Area Purification Node recipe (30 Sewage -> 1 "
+            "Xircon Effluent). 0 (the default) disables it entirely. 12 is "
+            "the true in-game value."
+        ),
+    )
+    parser.add_argument(
+        "-J",
+        "--enable-jincao",
+        action="store_true",
+        help=(
+            "Enable the Jincao Drink/Tea sell recipes and the Jincao -> "
+            "Carbon refine option. Off by default: Jincao ties with Yazhen "
+            "economically (same Filling/Packaging Unit capacity, same $ "
+            "per part), so enabling it just lets the solver return mixed "
+            "Yazhen/Jincao solutions worth the same $ as a pure-Yazhen one "
+            "but harder to build. Jincao would only be a genuine "
+            "improvement if sharing a reactor with Yazhen saved power, "
+            "which this model doesn't represent."
+        ),
+    )
+    parser.add_argument(
+        "-M",
+        "--max-forges",
+        type=int,
+        default=12,
+        help=(
+            "Number of Forge of the Sky buildings, split (as an integer "
+            "choice) between its competing recipes."
+        ),
+    )
+    parser.add_argument(
+        "-D",
+        "--dollar-goal",
+        type=float,
+        default=1600.0,
+        help="'-t mixed' only: $/min target for the Prosperity Points stock-bill goal.",
+    )
+    parser.add_argument(
+        "-P",
+        "--power-goal",
+        type=float,
+        default=2500.0,
+        help="'-t mixed' only: W target for the Prosperity Points excess-power goal.",
+    )
     args = parser.parse_args()
-    PMIN = '/min'
-    goal_material = WulingStockBill = Material(name='$', unit=PMIN, tags=VIRTUAL)
-    Watt = Material(name='W', tags=VIRTUAL+HIDDEN)
-    def std_alloc(name, additional_tags=''):
-        return Material(name=f'Allocation: [{name}]', tags=VIRTUAL+additional_tags)
-    ForgeAllocation = std_alloc('Forge of the Sky')
-    MetatransferAllocation = std_alloc('Metatransfer')
+    PMIN = "/min"
+    goal_material = WulingStockBill = Material(name="$", unit=PMIN, tags=VIRTUAL)
+    Watt = Material(name="W", tags=VIRTUAL + HIDDEN)
+
+    def std_alloc(name, additional_tags=""):
+        return Material(name=f"Allocation: [{name}]", tags=VIRTUAL + additional_tags)
+
+    ForgeAllocation = std_alloc("Forge of the Sky")
+    MetatransferAllocation = std_alloc("Metatransfer")
+
     def std_solid(name):
         return Material(name=name, unit=PMIN, tags=SOLID)
+
     def std_liquid(name):
         return Material(name=name, unit=PMIN, tags=LIQUID)
+
     def std_gas(name):
         return Material(name=name, unit=PMIN, tags=GAS)
-    OriginiumOre = std_solid('Originium Ore')
-    AmethystOre = std_solid('Amethyst Ore')
-    FerriumOre = std_solid('Ferrium Ore')
-    CupriumOre = std_solid('Cuprium Ore')
-    Buckflower = std_solid('Buckflower')
-    Citrome = std_solid('Citrome')
-    Aketine = std_solid('Aketine')
-    Sandleaf = std_solid('Sandleaf')
-    Yazhen = std_solid('Yazhen')
-    Jincao = std_solid('Jincao')
-    BuckflowerSeed = std_solid('Buckflower Seed')
-    CitromeSeed = std_solid('Citrome Seed')
-    AketineSeed = std_solid('Aketine Seed')
-    SandleafSeed = std_solid('Sandleaf Seed')
-    YazhenSeed = std_solid('Yazhen Seed')
-    JincaoSeed = std_solid('Jincao Seed')
-    BuckflowerPowder = std_solid('Buckflower Powder')
-    CitromePowder = std_solid('Citrome Powder')
-    AketinePowder = std_solid('Aketine Powder')
-    SandleafPowder = std_solid('Sandleaf Powder')
-    YazhenPowder = std_solid('Yazhen Powder')
-    JincaoPowder = std_solid('Jincao Powder')
-    Cuprium = std_solid('Cuprium')
-    CupriumPowder = std_solid('Cuprium Powder')
-    Ferrium = std_solid('Ferrium')
-    FerriumPowder = std_solid('Ferrium Powder')
-    Amethyst = std_solid('Amethyst Fiber')
-    AmethystPowder = std_solid('Amethyst Powder')
-    OriginiumPowder = std_solid('Originium Powder')
-    Carbon = std_solid('Carbon')
-    CarbonPowder = std_solid('Carbon Powder')
-    Origocrust = std_solid('Origocrust')
-    OrigocrustPowder = std_solid('Origocrust Powder')
-    DenseOrigocrustPowder = std_solid('Dense Origocrust Powder')
-    PackedOrigocrust = std_solid('Packed Origocrust')
-    DenseOriginiumPowder = std_solid('Dense Originium Powder')
-    DenseFerriumPowder = std_solid('Dense Ferrium Powder')
-    Steel = std_solid('Steel')
-    CrystonPowder = std_solid('Cryston Powder')
-    CrystonFiber = std_solid('Cryston Fiber')
-    DenseCarbonPowder = std_solid('Dense Carbon Powder')
-    StabilizedCarbon = std_solid('Stabilized Carbon')
-    Xiranite = std_solid('Xiranite')
-    HeavyXiranite = std_solid('Heavy Xiranite')
-    Xircon = std_solid('Xircon')
-    Hetonite = std_solid('Hetonite')
-    CupriumBottle = std_solid('Cuprium Bottle')
-    FerriumBottle = std_solid('Ferrium Bottle')
-    AmethystBottle = std_solid('Amethyst Bottle')
-    SteelBottle = std_solid('Steel Bottle')
-    CrystonBottle = std_solid('Cryston Bottle')
-    HetoniteBottle = std_solid('Hetonite Bottle')
-    CupriumPart = std_solid('Cuprium Part')
-    FerriumPart = std_solid('Ferrium Part')
-    AmethystPart = std_solid('Amethyst Part')
-    SteelPart = std_solid('Steel Part')
-    CrystonPart = std_solid('Cryston Part')
-    HetonitePart = std_solid('Hetonite Part')
-    CupriumBottlefilledwithYazhenSolution = std_solid('Cuprium Bottle filled with Yazhen Solution')
-    CupriumBottlefilledwithJincaoSolution = std_solid('Cuprium Bottle filled with Jincao Solution')
-    YazhenSyringeA = std_solid('Yazhen Syringe A')
-    JincaoTea = std_solid('Jincao Tea')
-    IndustrialExplosive = std_solid('Industrial Explosive')
-    LCValleyBattery = std_solid('LC Valley Battery')
-    SCValleyBattery = std_solid('SC Valley Battery')
-    HCValleyBattery = std_solid('HC Valley Battery')
-    FerriumBottlefilledwithYazhenSolution = std_solid('Ferrium Bottle filled with Yazhen Solution')
-    YazhenSyringeC = std_solid('Yazhen Syringe C')
-    FerriumBottlefilledwithJincaoSolution = std_solid('Ferrium Bottle filled with Jincao Solution')
-    JincaoDrink = std_solid('Jincao Drink')
-    LCWulingBattery = std_solid('LC Wuling Battery')
-    SCWulingBattery = std_solid('SC Wuling Battery')
-    GroundBuckflowerPowder = std_solid('Ground Buckflower Powder')
-    GroundCitromePowder = std_solid('Ground Citrome Powder')
-    FerriumComponent = std_solid('Ferrium Component')
-    CrystonComponent = std_solid('Cryston Component')
-    AmethystComponent = std_solid('Amethyst Component')
-    XiraniteComponent = std_solid('Xiranite Component')
-    CupriumComponent = std_solid('Cuprium Component')
-    HetoniteComponent = std_solid('Hetonite Component')
-    Pyrrolite = std_solid('Pyrrolite')
-    PyrrolitePart = std_solid('Pyrrolite Part')
-    CupriumCanister = std_solid('Cuprium Canister')
-    PyrroliteComponent = std_solid('Pyrrolite Component')
-    SeparatorCore = std_solid('Separator Core')
 
-    Water = std_liquid('Water')
-    Acid = std_liquid('Acid')
-    Sewage = std_liquid('Sewage')
-    YazhenSolution = std_liquid('Yazhen Solution')
-    JincaoSolution = std_liquid('Jincao Solution')
-    LiquidXiranite = std_liquid('Liquid Xiranite')
-    LiquidHeavyXiranite = std_liquid('Liquid Heavy Xiranite')
-    CupriumSolution = std_liquid('Cuprium Solution')
-    XirconEffluent = std_liquid('Xircon Effluent')
-    InertXirconEffluent = std_liquid('Inert Xircon Effluent')
-    HetoniteSolution = std_liquid('Hetonite Solution')
+    OriginiumOre = std_solid("Originium Ore")
+    AmethystOre = std_solid("Amethyst Ore")
+    FerriumOre = std_solid("Ferrium Ore")
+    CupriumOre = std_solid("Cuprium Ore")
+    Buckflower = std_solid("Buckflower")
+    Citrome = std_solid("Citrome")
+    Aketine = std_solid("Aketine")
+    Sandleaf = std_solid("Sandleaf")
+    Yazhen = std_solid("Yazhen")
+    Jincao = std_solid("Jincao")
+    BuckflowerSeed = std_solid("Buckflower Seed")
+    CitromeSeed = std_solid("Citrome Seed")
+    AketineSeed = std_solid("Aketine Seed")
+    SandleafSeed = std_solid("Sandleaf Seed")
+    YazhenSeed = std_solid("Yazhen Seed")
+    JincaoSeed = std_solid("Jincao Seed")
+    BuckflowerPowder = std_solid("Buckflower Powder")
+    CitromePowder = std_solid("Citrome Powder")
+    AketinePowder = std_solid("Aketine Powder")
+    SandleafPowder = std_solid("Sandleaf Powder")
+    YazhenPowder = std_solid("Yazhen Powder")
+    JincaoPowder = std_solid("Jincao Powder")
+    Cuprium = std_solid("Cuprium")
+    CupriumPowder = std_solid("Cuprium Powder")
+    Ferrium = std_solid("Ferrium")
+    FerriumPowder = std_solid("Ferrium Powder")
+    Amethyst = std_solid("Amethyst Fiber")
+    AmethystPowder = std_solid("Amethyst Powder")
+    OriginiumPowder = std_solid("Originium Powder")
+    Carbon = std_solid("Carbon")
+    CarbonPowder = std_solid("Carbon Powder")
+    Origocrust = std_solid("Origocrust")
+    OrigocrustPowder = std_solid("Origocrust Powder")
+    DenseOrigocrustPowder = std_solid("Dense Origocrust Powder")
+    PackedOrigocrust = std_solid("Packed Origocrust")
+    DenseOriginiumPowder = std_solid("Dense Originium Powder")
+    DenseFerriumPowder = std_solid("Dense Ferrium Powder")
+    Steel = std_solid("Steel")
+    CrystonPowder = std_solid("Cryston Powder")
+    CrystonFiber = std_solid("Cryston Fiber")
+    DenseCarbonPowder = std_solid("Dense Carbon Powder")
+    StabilizedCarbon = std_solid("Stabilized Carbon")
+    Xiranite = std_solid("Xiranite")
+    HeavyXiranite = std_solid("Heavy Xiranite")
+    Xircon = std_solid("Xircon")
+    Hetonite = std_solid("Hetonite")
+    CupriumBottle = std_solid("Cuprium Bottle")
+    FerriumBottle = std_solid("Ferrium Bottle")
+    AmethystBottle = std_solid("Amethyst Bottle")
+    SteelBottle = std_solid("Steel Bottle")
+    CrystonBottle = std_solid("Cryston Bottle")
+    HetoniteBottle = std_solid("Hetonite Bottle")
+    CupriumPart = std_solid("Cuprium Part")
+    FerriumPart = std_solid("Ferrium Part")
+    AmethystPart = std_solid("Amethyst Part")
+    SteelPart = std_solid("Steel Part")
+    CrystonPart = std_solid("Cryston Part")
+    HetonitePart = std_solid("Hetonite Part")
+    CupriumBottlefilledwithYazhenSolution = std_solid(
+        "Cuprium Bottle filled with Yazhen Solution"
+    )
+    CupriumBottlefilledwithJincaoSolution = std_solid(
+        "Cuprium Bottle filled with Jincao Solution"
+    )
+    YazhenSyringeA = std_solid("Yazhen Syringe A")
+    JincaoTea = std_solid("Jincao Tea")
+    IndustrialExplosive = std_solid("Industrial Explosive")
+    LCValleyBattery = std_solid("LC Valley Battery")
+    SCValleyBattery = std_solid("SC Valley Battery")
+    HCValleyBattery = std_solid("HC Valley Battery")
+    FerriumBottlefilledwithYazhenSolution = std_solid(
+        "Ferrium Bottle filled with Yazhen Solution"
+    )
+    YazhenSyringeC = std_solid("Yazhen Syringe C")
+    FerriumBottlefilledwithJincaoSolution = std_solid(
+        "Ferrium Bottle filled with Jincao Solution"
+    )
+    JincaoDrink = std_solid("Jincao Drink")
+    LCWulingBattery = std_solid("LC Wuling Battery")
+    SCWulingBattery = std_solid("SC Wuling Battery")
+    GroundBuckflowerPowder = std_solid("Ground Buckflower Powder")
+    GroundCitromePowder = std_solid("Ground Citrome Powder")
+    FerriumComponent = std_solid("Ferrium Component")
+    CrystonComponent = std_solid("Cryston Component")
+    AmethystComponent = std_solid("Amethyst Component")
+    XiraniteComponent = std_solid("Xiranite Component")
+    CupriumComponent = std_solid("Cuprium Component")
+    HetoniteComponent = std_solid("Hetonite Component")
+    Pyrrolite = std_solid("Pyrrolite")
+    PyrrolitePart = std_solid("Pyrrolite Part")
+    CupriumCanister = std_solid("Cuprium Canister")
+    PyrroliteComponent = std_solid("Pyrrolite Component")
+    SeparatorCore = std_solid("Separator Core")
 
-    Inergen = std_gas('Inergen')
-    Aquagen = std_gas('Aquagen')
-    Acridgen = std_gas('Acridgen')
-    Xiragen = std_gas('Xiragen')
-    HeavyXiragen = std_gas('Heavy Xiragen')
-    CupriumGas = std_gas('Cuprium Gas')
-    HetoniteGas = std_gas('Hetonite Gas')
-    PyrroliteGas = std_gas('Pyrrolite Gas')
+    Water = std_liquid("Water")
+    Acid = std_liquid("Acid")
+    Sewage = std_liquid("Sewage")
+    YazhenSolution = std_liquid("Yazhen Solution")
+    JincaoSolution = std_liquid("Jincao Solution")
+    LiquidXiranite = std_liquid("Liquid Xiranite")
+    LiquidHeavyXiranite = std_liquid("Liquid Heavy Xiranite")
+    CupriumSolution = std_liquid("Cuprium Solution")
+    XirconEffluent = std_liquid("Xircon Effluent")
+    InertXirconEffluent = std_liquid("Inert Xircon Effluent")
+    HetoniteSolution = std_liquid("Hetonite Solution")
 
-    StableENV = Material(name='Stable ENV', tags=VIRTUAL)
-    HumidENV = Material(name='Humid ENV', tags=VIRTUAL)
-    AcridENV = Material(name='Acrid ENV', tags=VIRTUAL)
-    XiraniteENV = Material(name='Xiranite ENV', tags=VIRTUAL)
+    Inergen = std_gas("Inergen")
+    Aquagen = std_gas("Aquagen")
+    Acridgen = std_gas("Acridgen")
+    Xiragen = std_gas("Xiragen")
+    HeavyXiragen = std_gas("Heavy Xiragen")
+    CupriumGas = std_gas("Cuprium Gas")
+    HetoniteGas = std_gas("Hetonite Gas")
+    PyrroliteGas = std_gas("Pyrrolite Gas")
+
+    StableENV = Material(name="Stable ENV", tags=VIRTUAL)
+    HumidENV = Material(name="Humid ENV", tags=VIRTUAL)
+    AcridENV = Material(name="Acrid ENV", tags=VIRTUAL)
+    XiraniteENV = Material(name="Xiranite ENV", tags=VIRTUAL)
     all_recipes = []
-    all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 100 * Xiragen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
-    #all_recipes.append(Recipe(expression=540 * OriginiumOre + 120 * FerriumOre + 420 * CupriumOre + 460 * Inergen + 12 * ForgeAllocation + 1 * MetatransferAllocation, name='Starting Materials', max_multiples=1))
+    all_recipes.append(
+        Recipe(
+            expression=args.originium_ore * OriginiumOre
+            + args.ferrium_ore * FerriumOre
+            + args.cuprium_ore * CupriumOre
+            + args.inergen * Inergen
+            + args.xiragen * Xiragen
+            + args.max_forges * ForgeAllocation
+            + 1 * MetatransferAllocation,
+            name="Starting Materials",
+            max_multiples=1,
+        )
+    )
+
     def std_building(building_name, power):
-        def make_recipe(inputs, outputs, /, max_multiples=inf, integer_only=False, integer_inputs=None):
-            power_str = f' ({power} W)' if power else ''
-            name = f'{building_name}{power_str}: {inputs} --> {outputs}'
-            additional_tags = '' if integer_inputs else HIDDEN
+        def make_recipe(
+            inputs,
+            outputs,
+            /,
+            max_multiples=inf,
+            integer_only=False,
+            integer_inputs=None,
+        ):
+            power_str = f" ({power} W)" if power else ""
+            name = f"{building_name}{power_str}: {inputs} --> {outputs}"
+            additional_tags = "" if integer_inputs else HIDDEN
             counter = std_alloc(name, additional_tags=additional_tags)
             counter_inputs = power * Watt
             if integer_inputs:
                 counter_inputs = counter_inputs + integer_inputs
-            all_recipes.append(Recipe(-counter_inputs + counter, name=f'Assign Allocation: {name}', integer_only=True))
-            all_recipes.append(Recipe(-counter - inputs + outputs, name=name, max_multiples=max_multiples, integer_only=integer_only))
+            all_recipes.append(
+                Recipe(
+                    -counter_inputs + counter,
+                    name=f"Assign Allocation: {name}",
+                    integer_only=True,
+                )
+            )
+            all_recipes.append(
+                Recipe(
+                    -counter - inputs + outputs,
+                    name=name,
+                    max_multiples=max_multiples,
+                    integer_only=integer_only,
+                )
+            )
+
         return make_recipe
-    for metatransfer_option in [ # non-exhaustive list
-        1500/60 * OriginiumOre,
-        1500/60 * AmethystOre,
-        1500/60 * DenseOriginiumPowder,
-        1500/60 * FerriumOre,
-        1500/60/2 * Steel,
-        1500/60/50 * HCValleyBattery,
-        1500/60/20 * SCValleyBattery,
-        1500/60/20 * LCValleyBattery,
-        ]:
-        all_recipes.append(Recipe(-MetatransferAllocation + metatransfer_option, f'Choose Metatransfer: {metatransfer_option}', integer_only=True))
-    std_pump = std_building('Fluid Pump', 10)
+
+    for metatransfer_option in [  # non-exhaustive list
+        1500 / 60 * OriginiumOre,
+        1500 / 60 * AmethystOre,
+        1500 / 60 * DenseOriginiumPowder,
+        1500 / 60 * FerriumOre,
+        1500 / 60 / 2 * Steel,
+        1500 / 60 / 50 * HCValleyBattery,
+        1500 / 60 / 20 * SCValleyBattery,
+        1500 / 60 / 20 * LCValleyBattery,
+    ]:
+        all_recipes.append(
+            Recipe(
+                -MetatransferAllocation + metatransfer_option,
+                f"Choose Metatransfer: {metatransfer_option}",
+                integer_only=True,
+            )
+        )
+    std_pump = std_building("Fluid Pump", 10)
     std_pump(0, 60 * Water)
-    std_pump2 = std_building('Acid Resistant Pump Mk II', 20)
+    std_pump2 = std_building("Acid Resistant Pump Mk II", 20)
     std_pump2(0, 60 * Acid)
-    std_refine = std_building('Refining Unit', 5)
+    std_refine = std_building("Refining Unit", 5)
     std_refine(30 * CupriumOre + 30 * Water, 30 * Cuprium + 30 * Sewage)
     std_refine(30 * FerriumOre, 30 * Ferrium)
     std_refine(30 * FerriumPowder, 30 * Ferrium)
@@ -200,9 +360,10 @@ def main() -> None:
     std_refine(30 * DenseOriginiumPowder, 30 * DenseOrigocrustPowder)
     std_refine(30 * Buckflower, 30 * Carbon)
     std_refine(30 * Sandleaf, 30 * Carbon)
-    #std_refine(30 * Jincao, 60 * Carbon)
+    if args.enable_jincao:
+        std_refine(30 * Jincao, 60 * Carbon)
     std_refine(30 * Yazhen, 60 * Carbon)
-    std_shred = std_building('Shredding Unit', 5)
+    std_shred = std_building("Shredding Unit", 5)
     std_shred(30 * Cuprium, 30 * CupriumPowder)
     std_shred(30 * Ferrium, 30 * FerriumPowder)
     std_shred(30 * Amethyst, 30 * AmethystPowder)
@@ -215,7 +376,7 @@ def main() -> None:
     std_shred(30 * Aketine, 60 * AketinePowder)
     std_shred(30 * Jincao, 60 * JincaoPowder)
     std_shred(30 * Yazhen, 60 * YazhenPowder)
-    std_fit = std_building('Fitting Unit', 20)
+    std_fit = std_building("Fitting Unit", 20)
     std_fit(30 * Ferrium, 30 * FerriumPart)
     std_fit(30 * Amethyst, 30 * AmethystPart)
     std_fit(30 * Steel, 30 * SteelPart)
@@ -223,7 +384,7 @@ def main() -> None:
     std_fit(30 * Cuprium, 30 * CupriumPart)
     std_fit(30 * Hetonite, 6 * HetonitePart)
     std_fit(30 * Pyrrolite, 6 * PyrrolitePart)
-    std_mould = std_building('Moulding Unit', 10)
+    std_mould = std_building("Moulding Unit", 10)
     std_mould(60 * Cuprium + 30 * Inergen, 30 * CupriumCanister)
     std_mould(60 * Ferrium, 30 * FerriumBottle)
     std_mould(60 * Amethyst, 30 * AmethystBottle)
@@ -231,25 +392,25 @@ def main() -> None:
     std_mould(60 * CrystonFiber, 30 * CrystonBottle)
     std_mould(60 * Cuprium, 30 * CupriumBottle)
     std_mould(60 * Hetonite, 30 * HetoniteBottle)
-    std_plant = std_building('Planting Unit', 20)
+    std_plant = std_building("Planting Unit", 20)
     std_plant(30 * JincaoSeed + 30 * Water, 60 * Jincao)
     std_plant(30 * YazhenSeed + 30 * Water, 60 * Yazhen)
     std_plant(30 * BuckflowerSeed, 30 * Buckflower)
     std_plant(30 * CitromeSeed, 30 * Citrome)
     std_plant(30 * SandleafSeed, 30 * Sandleaf)
     std_plant(30 * AketineSeed, 30 * Aketine)
-    std_seedpick = std_building('Seed-Picking Unit', 10)
+    std_seedpick = std_building("Seed-Picking Unit", 10)
     std_seedpick(30 * Buckflower, 60 * BuckflowerSeed)
     std_seedpick(30 * Citrome, 60 * CitromeSeed)
     std_seedpick(30 * Sandleaf, 60 * SandleafSeed)
     std_seedpick(30 * Aketine, 60 * AketineSeed)
     std_seedpick(30 * Jincao, 30 * JincaoSeed)
     std_seedpick(30 * Yazhen, 30 * YazhenSeed)
-    std_treatment = std_building('Water Treatment Unit', 50)
+    std_treatment = std_building("Water Treatment Unit", 50)
     std_treatment(30 * Sewage, 0)
     std_treatment(30 * XirconEffluent, 0)
     std_treatment(30 * InertXirconEffluent, 0)
-    std_gear = std_building('Gearing Unit', 10)
+    std_gear = std_building("Gearing Unit", 10)
     std_gear(30 * Origocrust + 30 * Amethyst, 6 * AmethystComponent)
     std_gear(60 * Origocrust + 60 * Ferrium, 6 * FerriumComponent)
     std_gear(60 * PackedOrigocrust + 60 * CrystonFiber, 6 * CrystonComponent)
@@ -257,24 +418,46 @@ def main() -> None:
     std_gear(60 * CupriumPart + 60 * Xiranite, 6 * CupriumComponent)
     std_gear(12 * HetonitePart + 12 * HeavyXiranite, 6 * HetoniteComponent)
     std_gear(6 * PyrrolitePart + 12 * HeavyXiranite, 6 * PyrroliteComponent)
-    std_fill = std_building('Filling Unit', 20)
-    std_fill(30 * CupriumBottle + 30 * YazhenSolution, 30 * CupriumBottlefilledwithYazhenSolution)
-    std_fill(30 * CupriumBottle + 30 * JincaoSolution, 30 * CupriumBottlefilledwithJincaoSolution)
-    std_fill(30 * FerriumBottle + 30 * YazhenSolution, 30 * FerriumBottlefilledwithYazhenSolution)
-    std_fill(30 * FerriumBottle + 30 * JincaoSolution, 30 * FerriumBottlefilledwithJincaoSolution)
-    std_pack = std_building('Packaging Unit', 20)
+    std_fill = std_building("Filling Unit", 20)
+    std_fill(
+        30 * CupriumBottle + 30 * YazhenSolution,
+        30 * CupriumBottlefilledwithYazhenSolution,
+    )
+    std_fill(
+        30 * CupriumBottle + 30 * JincaoSolution,
+        30 * CupriumBottlefilledwithJincaoSolution,
+    )
+    std_fill(
+        30 * FerriumBottle + 30 * YazhenSolution,
+        30 * FerriumBottlefilledwithYazhenSolution,
+    )
+    std_fill(
+        30 * FerriumBottle + 30 * JincaoSolution,
+        30 * FerriumBottlefilledwithJincaoSolution,
+    )
+    std_pack = std_building("Packaging Unit", 20)
     std_pack(30 * AmethystPart + 6 * AketinePowder, 6 * IndustrialExplosive)
     std_pack(30 * AmethystPart + 60 * OriginiumPowder, 6 * LCValleyBattery)
     std_pack(60 * FerriumPart + 90 * OriginiumPowder, 6 * SCValleyBattery)
     std_pack(60 * SteelPart + 90 * DenseOriginiumPowder, 6 * HCValleyBattery)
-    std_pack(60 * FerriumPart + 30 * FerriumBottlefilledwithYazhenSolution, 6 * YazhenSyringeC)
-    std_pack(60 * FerriumPart + 30 * FerriumBottlefilledwithJincaoSolution, 6 * JincaoDrink)
-    std_pack(60 * CupriumPart + 30 * CupriumBottlefilledwithYazhenSolution, 6 * YazhenSyringeA)
-    std_pack(60 * CupriumPart + 30 * CupriumBottlefilledwithJincaoSolution, 6 * JincaoTea)
+    std_pack(
+        60 * FerriumPart + 30 * FerriumBottlefilledwithYazhenSolution,
+        6 * YazhenSyringeC,
+    )
+    std_pack(
+        60 * FerriumPart + 30 * FerriumBottlefilledwithJincaoSolution, 6 * JincaoDrink
+    )
+    std_pack(
+        60 * CupriumPart + 30 * CupriumBottlefilledwithYazhenSolution,
+        6 * YazhenSyringeA,
+    )
+    std_pack(
+        60 * CupriumPart + 30 * CupriumBottlefilledwithJincaoSolution, 6 * JincaoTea
+    )
     std_pack(30 * Xiranite + 90 * DenseOriginiumPowder, 6 * LCWulingBattery)
     std_pack(30 * Xircon + 120 * DenseOriginiumPowder, 6 * SCWulingBattery)
     std_pack(30 * CupriumCanister + 30 * Xiranite, 60 * SeparatorCore)
-    std_grind = std_building('Grinding Unit', 50)
+    std_grind = std_building("Grinding Unit", 50)
     std_grind(60 * FerriumPowder + 30 * SandleafPowder, 30 * DenseFerriumPowder)
     std_grind(60 * AmethystPowder + 30 * SandleafPowder, 30 * CrystonPowder)
     std_grind(60 * OriginiumPowder + 30 * SandleafPowder, 30 * DenseOriginiumPowder)
@@ -282,106 +465,156 @@ def main() -> None:
     std_grind(60 * OrigocrustPowder + 30 * SandleafPowder, 30 * DenseOrigocrustPowder)
     std_grind(60 * BuckflowerPowder + 30 * SandleafPowder, 30 * GroundBuckflowerPowder)
     std_grind(60 * CitromePowder + 30 * SandleafPowder, 30 * GroundCitromePowder)
-    std_reactor = std_building('Reactor Crucible', 50)
+    std_reactor = std_building("Reactor Crucible", 50)
     std_reactor(30 * JincaoPowder + 30 * Water, 30 * JincaoSolution)
     std_reactor(30 * YazhenPowder + 30 * Water, 30 * YazhenSolution)
     std_reactor(30 * Xiranite + 30 * Water, 30 * LiquidXiranite)
     std_reactor(30 * HeavyXiranite + 30 * Acid, 30 * LiquidHeavyXiranite)
     std_reactor(30 * CupriumPowder + 30 * Acid, 30 * CupriumSolution)
-    std_reactor(30 * LiquidXiranite + 30 * Sewage, 30 * XirconEffluent + 30 * InertXirconEffluent)
+    std_reactor(
+        30 * LiquidXiranite + 30 * Sewage,
+        30 * XirconEffluent + 30 * InertXirconEffluent,
+    )
     std_reactor(60 * XirconEffluent + 30 * FerriumPowder, 30 * Xircon + 30 * Sewage)
     std_reactor(60 * HetoniteSolution + 30 * FerriumPowder, 30 * Hetonite + 30 * Sewage)
-    std_forge = std_building('Forge of the Sky', 50)
-    std_forge(60 * StabilizedCarbon + 30 * Water, 30 * Xiranite, integer_inputs=ForgeAllocation)
-    std_forge(60 * Xiranite + 30 * XirconEffluent, 6 * HeavyXiranite, integer_inputs=ForgeAllocation)
-    std_forge(30 * Carbon + 30 * Water, 30 * Xiranite, integer_inputs=ForgeAllocation + StableENV)
-    std_purify = std_building('Purification Unit', 50)
+    std_forge = std_building("Forge of the Sky", 50)
+    std_forge(
+        60 * StabilizedCarbon + 30 * Water,
+        30 * Xiranite,
+        integer_inputs=ForgeAllocation,
+    )
+    std_forge(
+        60 * Xiranite + 30 * XirconEffluent,
+        6 * HeavyXiranite,
+        integer_inputs=ForgeAllocation,
+    )
+    std_forge(
+        30 * Carbon + 30 * Water,
+        30 * Xiranite,
+        integer_inputs=ForgeAllocation + StableENV,
+    )
+    std_purify = std_building("Purification Unit", 50)
     std_purify(60 * Xiragen + 60 * SeparatorCore, 30 * HeavyXiragen)
-    std_purify(60 * Xiragen + 30 * SeparatorCore, 30 * HeavyXiragen, integer_inputs=StableENV)
+    std_purify(
+        60 * Xiragen + 30 * SeparatorCore, 30 * HeavyXiragen, integer_inputs=StableENV
+    )
     std_purify(60 * CupriumGas + 60 * SeparatorCore, 30 * HetoniteGas)
-    std_purify(60 * CupriumGas + 30 * SeparatorCore, 30 * HetoniteGas, integer_inputs=StableENV)
+    std_purify(
+        60 * CupriumGas + 30 * SeparatorCore, 30 * HetoniteGas, integer_inputs=StableENV
+    )
     std_purify(120 * InertXirconEffluent, 30 * XirconEffluent + 30 * Water)
     std_purify(120 * CupriumSolution, 30 * HetoniteSolution + 30 * Acid)
-    std_lg_transmute = std_building('Fluid-Gas Transmuting Unit', 50)
+    std_lg_transmute = std_building("Fluid-Gas Transmuting Unit", 50)
+
     def std_lg_transmute_pair(lside, gside):
-        std_lg_transmute(lside, gside, integer_inputs=6*LiquidXiranite)
-        std_lg_transmute(gside, lside, integer_inputs=6*LiquidXiranite)
+        std_lg_transmute(lside, gside, integer_inputs=6 * LiquidXiranite)
+        std_lg_transmute(gside, lside, integer_inputs=6 * LiquidXiranite)
+
     std_lg_transmute_pair(30 * Water, 30 * Aquagen)
     std_lg_transmute_pair(30 * Acid, 30 * Acridgen)
     std_lg_transmute_pair(30 * LiquidXiranite, 30 * Xiragen)
     std_lg_transmute_pair(12 * LiquidHeavyXiranite, 30 * HeavyXiragen)
     std_lg_transmute_pair(60 * CupriumSolution, 30 * CupriumGas)
     std_lg_transmute_pair(30 * HetoniteSolution, 30 * HetoniteGas)
-    std_sg_transmute = std_building('Solid-Gas Transmuting Unit', 50)
+    std_sg_transmute = std_building("Solid-Gas Transmuting Unit", 50)
+
     def std_sg_transmute_pair(sside, gside):
-        std_sg_transmute(sside, gside, integer_inputs=6*Xiragen)
-        std_sg_transmute(gside, sside, integer_inputs=6*Xiragen)
+        std_sg_transmute(sside, gside, integer_inputs=6 * Xiragen)
+        std_sg_transmute(gside, sside, integer_inputs=6 * Xiragen)
+
     std_sg_transmute_pair(30 * Xiranite, 30 * Xiragen)
     std_sg_transmute_pair(12 * HeavyXiranite, 30 * HeavyXiragen)
     std_sg_transmute_pair(60 * Cuprium, 30 * CupriumGas)
     std_sg_transmute_pair(30 * Hetonite, 60 * HetoniteGas)
     std_sg_transmute_pair(30 * Pyrrolite, 30 * PyrroliteGas)
-    std_gas_reactor = std_building('Gas Reactor Globe', 50)
-    std_gas_reactor(60 * HetoniteGas + 30 * Xiragen, 30 * PyrroliteGas, integer_inputs=AcridENV)
-    std_field = std_building('Gas Dispersing Unit', 0.01) # real cost is 0, but we don't want LP to treat it as free
+    std_gas_reactor = std_building("Gas Reactor Globe", 50)
+    std_gas_reactor(
+        60 * HetoniteGas + 30 * Xiragen, 30 * PyrroliteGas, integer_inputs=AcridENV
+    )
+    std_field = std_building(
+        "Gas Dispersing Unit", 0.01
+    )  # real cost is 0, but we don't want LP to treat it as free
     std_field(6 * Inergen, 4 * StableENV, integer_only=True)
     std_field(6 * Aquagen, 4 * HumidENV, integer_only=True)
     std_field(6 * Acridgen, 4 * AcridENV, integer_only=True)
     std_field(6 * Xiragen, 4 * XiraniteENV, integer_only=True)
-    std_thermal = std_building('Thermal Bank', 0)
+    std_thermal = std_building("Thermal Bank", 0)
     std_thermal(7.5 * OriginiumOre, 50 * Watt)
     std_thermal(1.5 * LCValleyBattery, 220 * Watt)
     std_thermal(1.5 * SCValleyBattery, 420 * Watt)
     std_thermal(1.5 * HCValleyBattery, 1100 * Watt)
     std_thermal(1.5 * LCWulingBattery, 1600 * Watt)
     std_thermal(1.5 * SCWulingBattery, 3200 * Watt)
-    std_sell = std_building('Sell', 0)
+    std_sell = std_building("Sell", 0)
     std_sell(Xiranite, WulingStockBill)
     std_sell(CupriumPart, WulingStockBill)
     std_sell(SeparatorCore, WulingStockBill)
     std_sell(YazhenSyringeC, 16 * WulingStockBill)
-    #std_sell(JincaoDrink, 16 * WulingStockBill)
+    if args.enable_jincao:
+        std_sell(JincaoDrink, 16 * WulingStockBill)
     std_sell(YazhenSyringeA, 22 * WulingStockBill)
-    #std_sell(JincaoTea, 22 * WulingStockBill)
+    if args.enable_jincao:
+        std_sell(JincaoTea, 22 * WulingStockBill)
     std_sell(LCWulingBattery, 25 * WulingStockBill)
     std_sell(HeavyXiranite, 27 * WulingStockBill)
     std_sell(HetonitePart, 48 * WulingStockBill)
     std_sell(SCWulingBattery, 54 * WulingStockBill)
     std_sell(PyrrolitePart, 70 * WulingStockBill)
-    std_test_area = std_building('Test Area Purification Node', 0)  # noqa: F841
-    #std_test_area(30 * Sewage, XirconEffluent, max_multiples=12)
-    if args.target == 'mixed':
-        goal_material = PerformancePoint = Material(name='pp', tags=VIRTUAL+HIDDEN)
+    std_test_area = std_building("Test Area Purification Node", 0)
+    std_test_area(
+        30 * Sewage, XirconEffluent, max_multiples=args.test_area_max_multiples
+    )
+    if args.target == "mixed":
+        goal_material = PerformancePoint = Material(name="pp", tags=VIRTUAL + HIDDEN)
+
         def pp_satisfaction(target_mat, mat_amount, pp_worth):
             target_expr = mat_amount * target_mat
-            First100Percent = std_alloc(f'First 100% of {target_expr}', additional_tags=HIDDEN)
-            std_pt = std_building(f'Award Points For {target_mat}', 0)
+            First100Percent = std_alloc(
+                f"First 100% of {target_expr}", additional_tags=HIDDEN
+            )
+            std_pt = std_building(f"Award Points For {target_mat}", 0)
             std_pt(target_expr, First100Percent, max_multiples=1)
             std_pt(First100Percent, pp_worth * 0.1 * PerformancePoint)
-            std_pt(First100Percent, pp_worth * 0.8 * PerformancePoint, integer_only=True)
+            std_pt(
+                First100Percent, pp_worth * 0.8 * PerformancePoint, integer_only=True
+            )
             # N segments with same output but different input
             # smallest input one is the best and will be taken first
             N_SEGMENTS = 30
             R = 0.85
             for i in range(N_SEGMENTS):
-                std_pt(mat_amount * R ** i * target_mat, pp_worth * 0.2 / N_SEGMENTS * PerformancePoint, max_multiples=1)
-        pp_satisfaction(WulingStockBill, 1600, 10000)
-        # since the factory already covers its own power cost, the power goal is only for additional buildings
-        pp_satisfaction(Watt, 2500, 10000)
+                std_pt(
+                    mat_amount * R**i * target_mat,
+                    pp_worth * 0.2 / N_SEGMENTS * PerformancePoint,
+                    max_multiples=1,
+                )
+
+        pp_satisfaction(WulingStockBill, args.dollar_goal, 10000)
+        # since the factory already covers its own power cost, the power
+        # goal is only for additional buildings
+        pp_satisfaction(Watt, args.power_goal, 10000)
+
         def pp_nonzero(target_mat, mat_amount, pp_worth):
-            std_pt = std_building(f'Award Points For {target_mat}', 0)
+            std_pt = std_building(f"Award Points For {target_mat}", 0)
             # N segments with same output but different input
             # smallest input one is the best and will be taken first
             N_SEGMENTS = 100
             R = 1.1
-            in_amounts = [R ** i for i in range(N_SEGMENTS)]
-            mul = mat_amount / sum(in_amounts[:N_SEGMENTS//2])
+            in_amounts = [R**i for i in range(N_SEGMENTS)]
+            mul = mat_amount / sum(in_amounts[: N_SEGMENTS // 2])
             for i in range(N_SEGMENTS):
-                std_pt(mul * in_amounts[i] * target_mat, pp_worth / N_SEGMENTS * PerformancePoint, max_multiples=1)
+                std_pt(
+                    mul * in_amounts[i] * target_mat,
+                    pp_worth / N_SEGMENTS * PerformancePoint,
+                    max_multiples=1,
+                )
+
         CraftingPoint = []
         for i in range(4):
-            CraftingPoint.append(Material(name=f'Wuling Tier {i+1} Gear', unit=PMIN, tags=VIRTUAL))
-        std_craft = std_building('Gear Crafting', 0)
+            CraftingPoint.append(
+                Material(name=f"Wuling Tier {i + 1} Gear", unit=PMIN, tags=VIRTUAL)
+            )
+        std_craft = std_building("Gear Crafting", 0)
         std_craft(50 * XiraniteComponent, CraftingPoint[0])
         std_craft(50 * CupriumComponent, CraftingPoint[1])
         std_craft(50 * HetoniteComponent, CraftingPoint[2])
@@ -393,19 +626,26 @@ def main() -> None:
         pp_nonzero(CraftingPoint[1], 0.05, 100)
         pp_nonzero(CraftingPoint[2], 0.05, 100)
         pp_nonzero(CraftingPoint[3], 0.1, 200)
-        # materials that already occur in other pipelines can be siphoned to a stash in storage mode
-        # or for liquids, a fluid tank
-        # after quickly saving up the small amount, it will not siphon anymore from main production
-        #pp_nonzero(CupriumCanister, 1, 200)
-        #pp_nonzero(CupriumPart, 0.5, 100)
+        # materials that already occur in other pipelines can be siphoned to
+        # a stash in storage mode, or for liquids, a fluid tank. After
+        # quickly saving up the small amount, it will not siphon anymore
+        # from main production
+        # pp_nonzero(CupriumCanister, 1, 200)
+        # pp_nonzero(CupriumPart, 0.5, 100)
         pp_nonzero(HetonitePart, 0.5, 100)
         pp_nonzero(PyrrolitePart, 1, 500)
-        #pp_nonzero(LiquidXiranite, 15, 200)
-        #pp_nonzero(LiquidHeavyXiranite, 0.5, 100)
+        # pp_nonzero(LiquidXiranite, 15, 200)
+        # pp_nonzero(LiquidHeavyXiranite, 0.5, 100)
         # no need to model delivery jobs
         # 14000/day * 2 ~= 19.4/min
-        # this is easily met with the excess of sellable goods (which we can't sell anyway)
-        # or some unused starting solids
-        # or with a single planting loop (30/min)
-        # or sandleaf + sandleaf powder + carbon + carbon powder gives you 4 different solids
-    optimize(set(), all_recipes, goal_material, force_fractions=args.force_fractions, graph_outfile=args.graph_outfile)
+        # this is easily met with the excess of sellable goods (which we
+        # can't sell anyway), or some unused starting solids, or with a
+        # single planting loop (30/min), or sandleaf + sandleaf powder +
+        # carbon + carbon powder gives you 4 different solids
+    optimize(
+        set(),
+        all_recipes,
+        goal_material,
+        force_fractions=args.force_fractions,
+        graph_outfile=args.graph_outfile,
+    )

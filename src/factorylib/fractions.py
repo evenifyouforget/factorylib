@@ -1,17 +1,18 @@
 """Snap near-fraction floating point results to readable exact fractions.
 
 LP/MILP solutions are floats, but many real solutions land near a "nice"
-fraction (e.g. an eighth of a building's throughput). This module finds such
-fractions for display purposes, optionally forcing every value to some
-close fraction (trading a small approximation error for a much more
-buildable/readable plan).
+fraction (e.g. an eighth of a building's throughput). This module finds
+such fractions for display purposes, optionally forcing every value to
+some close fraction -- trading a small approximation error for a much
+more buildable/readable plan.
 
-Ported from ``factorylib.endfield.main``'s ``Fraction2``/``find_close_fraction``
-(the design oracle); the loop structure and comparisons below are
-intentionally left exactly as authored there, including comparing against
-the original ``x`` (not the running ``x_modified``) on each iteration --
-that is what makes the walk converge monotonically from the un-modified
-value's nearest fraction downward.
+Ported from ``factorylib.endfield.main``'s
+``Fraction2``/``find_close_fraction`` (the design oracle). The loop
+structure and comparisons below are intentionally left exactly as
+authored there, including comparing against the original ``x`` (not the
+running ``x_modified``) on each iteration -- that is what makes the walk
+converge monotonically from the un-modified value's nearest fraction
+downward.
 """
 
 from __future__ import annotations

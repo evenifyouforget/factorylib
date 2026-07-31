@@ -1,11 +1,11 @@
-"""Render a solved :class:`~factorylib.optimize.OptimizeResult` as a Graphviz
-production-flow diagram: one node per (non-hidden, non-zero) material, one
-node per active recipe that touches 2+ visible materials, and edges showing
-each recipe's contribution to/from each material.
+"""Render a solved :class:`~factorylib.optimize.OptimizeResult` as a
+Graphviz production-flow diagram: one node per (non-hidden, non-zero)
+material, one node per active recipe that touches 2+ visible materials,
+and edges showing each recipe's contribution to/from each material.
 
 Ported (and split out) from ``factorylib.endfield.main``'s monolithic
-``optimize()``, which built this graph inline, interleaved with solving and
-report printing.
+``optimize()``, which built this graph inline, interleaved with solving
+and report printing.
 """
 
 from __future__ import annotations

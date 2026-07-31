@@ -1,8 +1,9 @@
-"""Tests for factorylib.fractions (Fraction2/find_close_fraction/snap_multiples).
+"""Tests for factorylib.fractions
+(Fraction2/find_close_fraction/snap_multiples).
 
 This replaces the old test_fractions.py, which tested the now-removed
-snap_value/snap_or_float API (superseded by find_close_fraction, ported from
-factorylib.endfield.main -- the design oracle).
+snap_value/snap_or_float API, superseded by find_close_fraction, ported
+from factorylib.endfield.main (the design oracle).
 """
 
 from __future__ import annotations

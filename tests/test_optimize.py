@@ -1,9 +1,9 @@
 """Tests for factorylib.optimize.solve()/OptimizeResult/material_balance().
 
-This replaces the old test_optimize.py, which tested the now-deleted plain-LP
-Formula/maximize_dollar API (no recipe algebra, no MILP). The new API works
-directly over Material/Recipe expressions, matching factorylib.endfield.main
-(the design oracle this was ported from).
+This replaces the old test_optimize.py, which tested the now-deleted
+plain-LP Formula/maximize_dollar API (no recipe algebra, no MILP). The
+new API works directly over Material/Recipe expressions, matching
+factorylib.endfield.main (the design oracle this was ported from).
 """
 
 from __future__ import annotations
@@ -107,12 +107,15 @@ def test_material_balance_matches_recipe_matrix():
 
 
 def test_foo_bar_scenario_matches_reference_solution():
-    """Reproduces factorylib.endfield.main's former test_main() demo scenario
-    (a free-materials grant, a cheap linear conversion, a scarce integer-only
-    "special offer", and an inefficient pure-Barium fallback conversion) and
-    pins the known-optimal answer: fully use the integer special offer (bound
-    to 1 whole run by Fooium supply), spend all remaining Fooium via the 1:1
-    conversion, then mop up leftover Barium via the inefficient conversion.
+    """Reproduces factorylib.endfield.main's former test_main() demo
+    scenario: a free-materials grant, a cheap linear conversion, a scarce
+    integer-only "special offer", and an inefficient pure-Barium fallback
+    conversion.
+
+    It pins the known-optimal answer: fully use the integer special
+    offer (bound to 1 whole run by Fooium supply), spend all remaining
+    Fooium via the 1:1 conversion, then mop up leftover Barium via the
+    inefficient conversion.
     """
     fooium = Material(name="Fooium", unit="/min", tags=SOLID)
     barium = Material(name="Barium", unit="/min", tags=SOLID)

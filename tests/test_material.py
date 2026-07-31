@@ -247,10 +247,9 @@ def test_add_material_over_three_terms_merges_flat():
 
 
 def test_repeated_addition_of_the_same_material_merges_coefficients():
-    """Adding the same Material twice merges into a single term with a
-    combined coefficient, rather than keeping two separate entries --
-    this is what makes constant-folding automatic with no separate
-    simplify() pass."""
+    """Adding the same Material twice merges into a single term with a combined
+    coefficient, rather than keeping two separate entries. This is what makes
+    constant-folding automatic, with no separate simplify() pass."""
     ore = Material(name="Ore", unit="/min", tags=SOLID)
     expr = ore + ore
     assert expr.terms() == {ore: 2}
@@ -258,10 +257,10 @@ def test_repeated_addition_of_the_same_material_merges_coefficients():
 
 
 def test_nested_multiplication_constant_folds_automatically():
-    """3 * (2 * ore) folds straight to a single 6-coefficient term --
-    unlike a tree representation, there's nothing to separately flatten:
-    multiplying a LinearCombinationMaterial by a scalar just rescales
-    its existing (already-merged) terms dict."""
+    """3 * (2 * ore) folds straight to a single 6-coefficient term. Unlike a
+    tree representation, there's nothing to separately flatten: multiplying a
+    LinearCombinationMaterial by a scalar just rescales its existing
+    (already-merged) terms dict."""
     ore = Material(name="Ore", unit="/min", tags=SOLID)
     expr = 3 * (2 * ore)
     assert expr.terms() == {ore: 6}

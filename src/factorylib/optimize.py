@@ -4,13 +4,13 @@ Given a set of :class:`~factorylib.material.Recipe` objects (each an
 expression over :class:`~factorylib.material.Material` leaves) and a single
 material to maximize, builds a recipe/material incidence matrix and solves
 for the non-negative (optionally integer-constrained) run count of each
-recipe that maximizes net production of the target material, subject to
-every other material's net balance staying non-negative.
+recipe that maximizes net production of the target material, subject to every
+other material's net balance staying non-negative.
 
-This supersedes the previous ``Formula``-based ``maximize_dollar`` (a
-plain-LP, no-recipe-algebra dollar maximizer with no MILP/integer support)
--- ported and refactored from ``factorylib.endfield.main``'s monolithic
-``optimize()``, split into: this module's pure "solve" step, then
+This supersedes the previous ``Formula``-based ``maximize_dollar``, a
+plain-LP, no-recipe-algebra dollar maximizer with no MILP/integer support.
+It's ported and refactored from ``factorylib.endfield.main``'s monolithic
+``optimize()``, split into this module's pure "solve" step, then
 :mod:`factorylib.report` (text report) and :mod:`factorylib.diagram`
 (Graphviz rendering) as separate consumers of the same result.
 """
@@ -120,8 +120,20 @@ def solve(
     constraints = LinearConstraint(recipe_matrix.T, lb=0)
     # Minimization objective
     c = -recipe_matrix[:, max_objective_index]
-    # Query MILP solver
-    res = milp(c, integrality=integrality, bounds=bounds, constraints=constraints)
+    # Query MILP solver. HiGHS's default mip_rel_gap (~1e-4) lets it stop at
+    # a solution merely close to optimal rather than proving the true
+    # optimum -- fine for small problems, but scenarios with many integer
+    # variables (e.g. the "mixed" PP-overlay target's many Award-Points
+    # tiers) have enough room in that gap to land noticeably short of the
+    # real optimum. Tightening it makes the solve deterministic and
+    # actually optimal, at negligible extra cost for problems this size.
+    res = milp(
+        c,
+        integrality=integrality,
+        bounds=bounds,
+        constraints=constraints,
+        options={"mip_rel_gap": 1e-9},
+    )
     return OptimizeResult(
         status=int(res.status),
         message=str(res.message),

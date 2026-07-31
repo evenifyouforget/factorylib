@@ -7,22 +7,24 @@ def converger_explicit(
     in_flow: np.ndarray, weights: np.ndarray | None = None
 ) -> np.ndarray:
     """
-    Directly calculate the output flows for a converger,
-    in a simplified model using continuous steady state
-    rather than discrete time stepping. Assumes 1 = full belt.
+    Directly calculate the output flows for a converger, in a simplified
+    model using continuous steady state rather than discrete time
+    stepping. Assumes 1 = full belt.
 
-    Convergers take turns between their inputs using weighted scheduling,
-    skipping a turn if the belt in question is unable to supply an item.
-    With uniform weights (default), this matches round-robin behavior.
+    Convergers take turns between their inputs using weighted
+    scheduling, skipping a turn if the belt in question is unable to
+    supply an item. With uniform weights (default), this matches
+    round-robin behavior.
 
     Args:
-        in_flow: Items/second each input belt can supply (real output may be less).
-        weights: Fractional bandwidth allocated to each input (must sum to 1).
-            None means uniform weights (1/n each).
+        in_flow: Items/second each input belt can supply (real output
+            may be less).
+        weights: Fractional bandwidth allocated to each input (must sum
+            to 1). None means uniform weights (1/n each).
 
     Returns:
-        Items/second taken from each input, corresponding to the inputs.
-        ex. output index 0 corresponds to input index 0.
+        Items/second taken from each input, corresponding to the
+        inputs. ex. output index 0 corresponds to input index 0.
     """
     if len(in_flow.shape) != 1:
         raise ValueError("Input must be a vector (1D array)")
