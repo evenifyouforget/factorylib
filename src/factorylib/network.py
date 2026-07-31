@@ -1,3 +1,16 @@
+"""Steady-state belt/splitter/converger network solver (Source/Splitter/
+Converger, wired into an arbitrary DAG or cycle, solved via iterative
+fixed-point convergence over `factorylib.simple.converger_explicit`).
+
+DEPRECATED: kept as working reference code (it still passes its own
+tests below), not as a maintained part of the current library. It
+predates the `Material`/`Recipe`/MILP engine `factorylib.endfield.main`
+is built on and isn't wired into it. A future PR is expected to replace
+this with a version built on the current architecture -- until then,
+this is excluded from `mypy --strict` (see `pyproject.toml`) rather than
+retrofitted with type annotations that would just be thrown away.
+"""
+
 from collections import deque
 from dataclasses import dataclass
 

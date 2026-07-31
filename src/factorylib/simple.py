@@ -38,7 +38,7 @@ def converger_explicit(
             raise ValueError("weights must have same length as in_flow")
 
     if n == 1:
-        return np.minimum(in_flow, weights)  # weights[0] == 1.0 for n=1
+        return np.minimum(in_flow, weights)  # type: ignore[no-any-return]  # weights[0] == 1.0 for n=1
 
     with np.errstate(divide="ignore", invalid="ignore"):
         ratios = np.where(weights > _EPS, in_flow / weights, np.inf)

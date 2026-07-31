@@ -1,172 +1,133 @@
-"""LP-based dollar maximization for factory resource allocation."""
+"""MILP-based recipe-multiple optimization over a Material/Recipe model.
+
+Given a set of :class:`~factorylib.material.Recipe` objects (each an
+expression over :class:`~factorylib.material.Material` leaves) and a single
+material to maximize, builds a recipe/material incidence matrix and solves
+for the non-negative (optionally integer-constrained) run count of each
+recipe that maximizes net production of the target material, subject to
+every other material's net balance staying non-negative.
+
+This supersedes the previous ``Formula``-based ``maximize_dollar`` (a
+plain-LP, no-recipe-algebra dollar maximizer with no MILP/integer support)
+-- ported and refactored from ``factorylib.endfield.main``'s monolithic
+``optimize()``, split into: this module's pure "solve" step, then
+:mod:`factorylib.report` (text report) and :mod:`factorylib.diagram`
+(Graphviz rendering) as separate consumers of the same result.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
-from scipy.optimize import Bounds, LinearConstraint, linprog, milp
+from numpy.typing import NDArray
+from scipy.optimize import Bounds, LinearConstraint, milp
 
-_STATUS_MAP = {
-    0: "optimal",
-    1: "limit",
-    2: "infeasible",
-    3: "unbounded",
-}
-
-
-@dataclass
-class Formula:
-    """
-    One production formula consuming resources and producing $ output.
-
-    Args:
-        consumption: shape (N,) float array, resource consumption per unit run.
-        output: $ produced per unit run (must be >= 0).
-        limit: maximum run rate; np.inf means unbounded.
-        integer: if True, this formula's rate is constrained to whole
-            multiples only (e.g. "how many Forge of the Sky units go to
-            Xiranite supply" is inherently a discrete choice, not a
-            continuous one). Mixing a handful of integer formulas among
-            otherwise-continuous ones turns maximize_dollar's LP into a
-            small MILP (see its docstring) -- solved once, exactly,
-            instead of the caller having to brute-force enumerate the
-            discrete choices itself.
-    """
-
-    consumption: np.ndarray
-    output: float
-    limit: float = field(default=np.inf)
-    integer: bool = False
-
-    def __post_init__(self) -> None:
-        self.consumption = np.asarray(self.consumption, dtype=float)
-        if self.consumption.ndim != 1:
-            raise ValueError("consumption must be a 1-D array")
-        if self.output < 0:
-            raise ValueError("output must be non-negative")
-        if self.limit < 0:
-            raise ValueError("limit must be non-negative (use np.inf for unbounded)")
+from factorylib.material import Material, Recipe, gather_materials, substitute
 
 
 @dataclass
 class OptimizeResult:
-    """
-    Result of maximize_dollar().
+    """Result of :func:`solve`.
 
     Attributes:
-        status: "optimal", "infeasible", "unbounded", "zero", or "limit".
-        dollar_output: Maximum $ per second achieved.
-        formula_rates: shape (M,) optimal run rate for each formula.
-        resource_slack: shape (N,) unused supply for each resource (clipped >= 0).
+        status: raw ``scipy.optimize.milp`` status code (0 == optimal).
+        message: solver status message.
+        objective: maximized net amount of the target material.
+        materials: all materials involved, sorted (index matches
+            ``recipe_matrix``'s columns).
+        recipes: all recipes considered, in the order supplied (index
+            matches ``recipe_matrix``'s rows and ``multiples``).
+        recipe_matrix: shape (num_recipes, num_materials); entry [i, j] is
+            the net amount of material j produced (negative if consumed)
+            per single run of recipe i.
+        multiples: shape (num_recipes,); the raw (unsnapped) optimal run
+            count for each recipe.
     """
 
-    status: str
-    dollar_output: float
-    formula_rates: np.ndarray
-    resource_slack: np.ndarray
+    status: int
+    message: str
+    objective: float
+    materials: list[Material]
+    recipes: list[Recipe]
+    recipe_matrix: NDArray[np.float64]
+    multiples: NDArray[np.float64]
 
 
-def maximize_dollar(
-    supply: np.ndarray | list[float],
-    formulas: list[Formula],
-) -> OptimizeResult:
-    """
-    Maximize total $ output subject to resource supply constraints.
-
-    Solves the LP:
-        maximize   sum_j output_j * c_j
-        subject to sum_j consumption[i,j] * c_j <= supply[i]  for all i
-                   0 <= c_j <= limit_j                         for all j
-
-    If any formula has integer=True, this becomes a small MILP (solved via
-    scipy.optimize.milp, branch-and-bound) instead of a plain continuous
-    LP -- e.g. a discrete allocation choice (how many Forge of the Sky
-    units go to Xiranite supply vs. Heavy Xiranite capacity; which
-    Metatransfer option to pick) can be modeled as ordinary Formula
-    entries (via a couple of extra virtual resource dimensions -- see
-    factorylib.endfield.wuling's module docstring) instead of the caller
-    having to brute-force enumerate the discrete choices in an outer
-    loop. A nice side effect: factorylib.alternatives.find_alternatives'
-    epsilon-perturbation tie-finder then also discovers ties *between*
-    discrete choices for free, the same way it already finds ties between
-    continuous formulas -- both are just Formula objects to it.
-
-    Args:
-        supply:   shape (N,) non-negative resource supply vector.
-        formulas: list of M Formula objects, all with consumption of length N.
+def material_balance(
+    result: OptimizeResult, multiples: NDArray[Any]
+) -> tuple[NDArray[Any], NDArray[Any]]:
+    """Per-material (gross produced, net) amounts for a given set of recipe
+    multiples (typically ``result.multiples`` or a snapped variant from
+    :func:`factorylib.fractions.snap_multiples`).
 
     Returns:
-        OptimizeResult with status, dollar_output, formula_rates, resource_slack.
+        (plus_amount, net_amount): both shape (num_materials,).
+    """
+    plus_amount = np.maximum(0, result.recipe_matrix.T) @ multiples
+    net_amount = result.recipe_matrix.T @ multiples
+    return plus_amount, net_amount
+
+
+def solve(
+    all_materials: set[Material] | list[Material],
+    all_recipes: list[Recipe],
+    material_to_maximize: Material,
+) -> OptimizeResult:
+    """Solve for the recipe multiples that maximize net production of
+    ``material_to_maximize``, subject to every material's net balance
+    staying non-negative.
 
     Raises:
-        ValueError: if supply is not 1-D, if supply contains negative values, or
-                    if any formula has consumption length != N.
+        ValueError: if ``material_to_maximize`` isn't among ``all_materials``
+            or any recipe's gathered materials.
     """
-    supply = np.asarray(supply, dtype=float)
-    if supply.ndim != 1:
-        raise ValueError("supply must be a 1-D array")
-    if np.any(supply < 0):
-        raise ValueError("supply values must be non-negative")
-
-    N = supply.shape[0]
-    M = len(formulas)
-
-    for j, f in enumerate(formulas):
-        if f.consumption.shape[0] != N:
-            raise ValueError(
-                f"Formula {j} has consumption length {f.consumption.shape[0]}, "
-                f"expected {N}"
-            )
-
-    # Fast path: no formulas or (resources exist and all supply is zero)
-    if M == 0 or (N > 0 and np.all(supply == 0)):
-        return OptimizeResult(
-            status="zero",
-            dollar_output=0.0,
-            formula_rates=np.zeros(M),
-            resource_slack=supply.copy(),
+    num_recipes = len(all_recipes)
+    # Get the complete list of all materials, including recipe counters
+    materials = sorted(set(all_materials) | gather_materials(all_recipes))
+    num_materials = len(materials)
+    # Assign each material a unit basis vector
+    subs_dict: dict[Material, NDArray[np.float64]] = {}
+    max_objective_index: int | None = None
+    for i, material in enumerate(materials):
+        a = np.zeros(num_materials, dtype=float)
+        a[i] = 1
+        subs_dict[material] = a
+        if material == material_to_maximize:
+            max_objective_index = i
+    if max_objective_index is None:
+        raise ValueError(
+            f"material_to_maximize {material_to_maximize!r} not found among "
+            "all_materials or recipes' gathered materials"
         )
-
-    # Build LP matrices
-    # consumption shape: (N, M) — row = resource, col = formula
-    consumption = np.stack([f.consumption for f in formulas], axis=1)
-    c_obj = -np.array([f.output for f in formulas], dtype=float)
-    bounds = [(0.0, None if np.isinf(f.limit) else float(f.limit)) for f in formulas]
-
-    if any(f.integer for f in formulas):
-        lb = np.array([b[0] for b in bounds])
-        ub = np.array([np.inf if b[1] is None else b[1] for b in bounds])
-        integrality = np.array([1 if f.integer else 0 for f in formulas])
-        result = milp(
-            c_obj,
-            constraints=LinearConstraint(consumption, -np.inf, supply),
-            bounds=Bounds(lb, ub),
-            integrality=integrality,
-        )
-    else:
-        result = linprog(
-            c_obj,
-            A_ub=consumption,
-            b_ub=supply,
-            bounds=bounds,
-            method="highs",
-        )
-
-    status_str = _STATUS_MAP.get(result.status, f"solver_status_{result.status}")
-
-    if result.status == 0:
-        rates = result.x
-        dollar = float(-result.fun)
-        slack = np.maximum(0.0, supply - consumption @ rates)
-    else:
-        rates = np.zeros(M)
-        dollar = 0.0
-        slack = supply.copy()
-
+    # Construct the recipe matrix
+    recipe_matrix = np.zeros((num_recipes, num_materials), dtype=float)
+    for i, recipe in enumerate(all_recipes):
+        recipe_matrix[i, :] += substitute(recipe.expression, subs_dict)
+    # Construct the bounds on the decision variables (recipe multiples)
+    lb = np.zeros(num_recipes, dtype=float)
+    ub = np.full(num_recipes, np.inf, dtype=float)
+    for i, recipe in enumerate(all_recipes):
+        ub[i] = recipe.max_multiples
+    bounds = Bounds(lb=lb, ub=ub)
+    # Construct the integrality flags
+    integrality = np.zeros(num_recipes, dtype=int)
+    for i, recipe in enumerate(all_recipes):
+        if recipe.integer_only:
+            integrality[i] = 1
+    # Construct the constraints (all net supplies must be non-negative)
+    constraints = LinearConstraint(recipe_matrix.T, lb=0)
+    # Minimization objective
+    c = -recipe_matrix[:, max_objective_index]
+    # Query MILP solver
+    res = milp(c, integrality=integrality, bounds=bounds, constraints=constraints)
     return OptimizeResult(
-        status=status_str,
-        dollar_output=dollar,
-        formula_rates=rates,
-        resource_slack=slack,
+        status=int(res.status),
+        message=str(res.message),
+        objective=float(-res.fun),
+        materials=materials,
+        recipes=list(all_recipes),
+        recipe_matrix=recipe_matrix,
+        multiples=np.asarray(res.x, dtype=float),
     )

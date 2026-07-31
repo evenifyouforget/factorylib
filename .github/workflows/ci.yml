@@ -22,6 +22,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # The graphviz PyPI package (installed below via ".[dev]") is only a
+      # thin Python wrapper -- it shells out to the actual Graphviz `dot`
+      # executable, which isn't distributed on PyPI at all and must come
+      # from the OS package manager. Without this, every test exercising
+      # factorylib.diagram's real rendering path fails with
+      # graphviz.backend.execute.ExecutableNotFound.
+      - run: sudo apt-get update && sudo apt-get install -y graphviz
       - run: pip install -e ".[dev]"
       - run: pytest
       - uses: codecov/codecov-action@v4
