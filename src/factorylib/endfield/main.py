@@ -114,6 +114,30 @@ def main() -> None:
             "which this model doesn't represent."
         ),
     )
+    parser.add_argument(
+        "-M",
+        "--max-forges",
+        type=int,
+        default=12,
+        help=(
+            "Number of Forge of the Sky buildings, split (as an integer "
+            "choice) between its competing recipes."
+        ),
+    )
+    parser.add_argument(
+        "-D",
+        "--dollar-goal",
+        type=float,
+        default=1600.0,
+        help="'-t mixed' only: $/min target for the Prosperity Points stock-bill goal.",
+    )
+    parser.add_argument(
+        "-P",
+        "--power-goal",
+        type=float,
+        default=2500.0,
+        help="'-t mixed' only: W target for the Prosperity Points excess-power goal.",
+    )
     args = parser.parse_args()
     PMIN = "/min"
     goal_material = WulingStockBill = Material(name="$", unit=PMIN, tags=VIRTUAL)
@@ -261,7 +285,7 @@ def main() -> None:
             + args.cuprium_ore * CupriumOre
             + args.inergen * Inergen
             + args.xiragen * Xiragen
-            + 12 * ForgeAllocation
+            + args.max_forges * ForgeAllocation
             + 1 * MetatransferAllocation,
             name="Starting Materials",
             max_multiples=1,
@@ -565,10 +589,10 @@ def main() -> None:
                     max_multiples=1,
                 )
 
-        pp_satisfaction(WulingStockBill, 1600, 10000)
+        pp_satisfaction(WulingStockBill, args.dollar_goal, 10000)
         # since the factory already covers its own power cost, the power
         # goal is only for additional buildings
-        pp_satisfaction(Watt, 2500, 10000)
+        pp_satisfaction(Watt, args.power_goal, 10000)
 
         def pp_nonzero(target_mat, mat_amount, pp_worth):
             std_pt = std_building(f"Award Points For {target_mat}", 0)

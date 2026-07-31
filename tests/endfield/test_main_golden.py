@@ -169,3 +169,30 @@ def test_enable_jincao_ties_with_yazhen_rather_than_improving_on_it(capsys):
         _run_main(["-t", "sellable", "--enable-jincao"], capsys)
     )
     assert with_jincao == pytest.approx(baseline)
+
+
+def test_max_forges_is_configurable(capsys):
+    """Forge of the Sky count used to be a hardcoded 12. Fewer forges is
+    a real capacity cut (must hurt or leave the $-optimum unchanged);
+    more is a real capacity gain (must help or leave it unchanged)."""
+    baseline = _extract_score(_run_main(["-t", "sellable"], capsys))
+    fewer = _extract_score(_run_main(["-t", "sellable", "--max-forges", "0"], capsys))
+    more = _extract_score(_run_main(["-t", "sellable", "--max-forges", "24"], capsys))
+    assert fewer <= baseline <= more
+
+
+def test_dollar_and_power_goal_are_configurable_for_mixed_target(capsys):
+    """The Prosperity Points $ and power goal targets used to be
+    hardcoded (1600 and 2500). Lowering either makes it easier to reach
+    100% satisfaction and unlock the past-100% bonus segments sooner, so
+    the achievable PP total for the same underlying production can only
+    go up, never down, versus the harder default target."""
+    baseline = _extract_score(_run_main(["-t", "mixed"], capsys))
+    lower_dollar_goal = _extract_score(
+        _run_main(["-t", "mixed", "--dollar-goal", "800"], capsys)
+    )
+    lower_power_goal = _extract_score(
+        _run_main(["-t", "mixed", "--power-goal", "0"], capsys)
+    )
+    assert lower_dollar_goal >= baseline
+    assert lower_power_goal >= baseline
