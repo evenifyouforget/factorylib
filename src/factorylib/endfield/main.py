@@ -8,6 +8,9 @@ from factorylib.material import GAS, HIDDEN, LIQUID, SOLID, VIRTUAL, Material, R
 from factorylib.optimize import solve
 from factorylib.report import print_report
 
+NO_EVENT = "none"
+CHUBBY_LUNG_EVENT = "chubby-lung"
+
 
 def optimize(
     all_materials,
@@ -132,6 +135,20 @@ def main() -> None:
         help="'-t mixed' only: $/min target for the Prosperity Points stock-bill goal.",
     )
     parser.add_argument(
+        "-B",
+        "--blue-cert-goal",
+        type=float,
+        default=0.0,
+        help="'-t mixed' only: bc/min target for the Prosperity Points blue-cert goal. 0 disables it. 'blue cert' is a stand-in for whatever the currente event's currency is called.",
+    )
+    parser.add_argument(
+        "-E",
+        "--event",
+        choices=[NO_EVENT, CHUBBY_LUNG_EVENT],
+        default=NO_EVENT,
+        help="Turns on limited-time event formulas",
+    )
+    parser.add_argument(
         "-P",
         "--power-goal",
         type=float,
@@ -141,6 +158,7 @@ def main() -> None:
     args = parser.parse_args()
     PMIN = "/min"
     goal_material = WulingStockBill = Material(name="$", unit=PMIN, tags=VIRTUAL)
+    BlueCert = Material(name="bc", unit=PMIN, tags=VIRTUAL)
     Watt = Material(name="W", tags=VIRTUAL + HIDDEN)
 
     def std_alloc(name, additional_tags=""):
@@ -251,6 +269,16 @@ def main() -> None:
     CupriumCanister = std_solid("Cuprium Canister")
     PyrroliteComponent = std_solid("Pyrrolite Component")
     SeparatorCore = std_solid("Separator Core")
+    ProtoXiranCuprium = std_solid("Proto Xiran-Cuprium")
+    ProtoXiranCupriumPart = std_solid("Proto Xiran-Cuprium Part")
+    ProtoChubbyLungHeavyShell = std_solid("Proto Chubby Lung Heavy Shell")
+    ProtoChubbyLungShell = std_solid("Proto Chubby Lung Shell")
+    ProtoXiranite = std_solid("Proto Xiranite")
+    ProtoHeavyXiranite = std_solid("Proto Heavy Xiranite")
+    ProtoXiranCupriumFrame = std_solid("Proto Xiran Cuprium Frame")
+    ProtoCupriumFrame = std_solid("Proto Cuprium Frame")
+    HeavyXiraniteChubbyLung = std_solid("Heavy Xiranite Chubby Lung")
+    XiraniteChubbyLung = std_solid("Xiranite Chubby Lung")
 
     Water = std_liquid("Water")
     Acid = std_liquid("Acid")
@@ -272,6 +300,7 @@ def main() -> None:
     CupriumGas = std_gas("Cuprium Gas")
     HetoniteGas = std_gas("Hetonite Gas")
     PyrroliteGas = std_gas("Pyrrolite Gas")
+    ProtoXiranCupriumGas = std_gas("Proto Xiran-Cuprium Gas")
 
     StableENV = Material(name="Stable ENV", tags=VIRTUAL)
     HumidENV = Material(name="Humid ENV", tags=VIRTUAL)
@@ -363,6 +392,9 @@ def main() -> None:
     if args.enable_jincao:
         std_refine(30 * Jincao, 60 * Carbon)
     std_refine(30 * Yazhen, 60 * Carbon)
+    if args.event == CHUBBY_LUNG_EVENT:
+        std_refine(30 * Xiranite, 30 * ProtoXiranite)
+        std_refine(6 * HeavyXiranite, 6 * ProtoHeavyXiranite)
     std_shred = std_building("Shredding Unit", 5)
     std_shred(30 * Cuprium, 30 * CupriumPowder)
     std_shred(30 * Ferrium, 30 * FerriumPowder)
@@ -384,6 +416,8 @@ def main() -> None:
     std_fit(30 * Cuprium, 30 * CupriumPart)
     std_fit(30 * Hetonite, 6 * HetonitePart)
     std_fit(30 * Pyrrolite, 6 * PyrrolitePart)
+    if args.event == CHUBBY_LUNG_EVENT:
+        std_refine(30 * ProtoXiranCuprium, 6 * ProtoXiranCupriumPart)
     std_mould = std_building("Moulding Unit", 10)
     std_mould(60 * Cuprium + 30 * Inergen, 30 * CupriumCanister)
     std_mould(60 * Ferrium, 30 * FerriumBottle)
@@ -392,6 +426,9 @@ def main() -> None:
     std_mould(60 * CrystonFiber, 30 * CrystonBottle)
     std_mould(60 * Cuprium, 30 * CupriumBottle)
     std_mould(60 * Hetonite, 30 * HetoniteBottle)
+    if args.event == CHUBBY_LUNG_EVENT:
+        std_mould(30 * ProtoXiranite, 30 * ProtoChubbyLungShell)
+        std_mould(6 * ProtoHeavyXiranite + 30 * Inergen, 6 * ProtoChubbyLungHeavyShell)
     std_plant = std_building("Planting Unit", 20)
     std_plant(30 * JincaoSeed + 30 * Water, 60 * Jincao)
     std_plant(30 * YazhenSeed + 30 * Water, 60 * Yazhen)
@@ -457,6 +494,11 @@ def main() -> None:
     std_pack(30 * Xiranite + 90 * DenseOriginiumPowder, 6 * LCWulingBattery)
     std_pack(30 * Xircon + 120 * DenseOriginiumPowder, 6 * SCWulingBattery)
     std_pack(30 * CupriumCanister + 30 * Xiranite, 60 * SeparatorCore)
+    if args.event == CHUBBY_LUNG_EVENT:
+        std_pack(120 * CupriumPart + 30 * Xiranite, 30 * ProtoCupriumFrame)
+        std_pack(30 * ProtoChubbyLungShell + 30 * ProtoCupriumFrame, 6 * XiraniteChubbyLung)
+        std_pack(6 * ProtoXiranCupriumPart + 6 * HeavyXiranite, 6 * ProtoXiranCupriumFrame)
+        std_pack(6 * ProtoChubbyLungHeavyShell + 6 * ProtoXiranCupriumFrame, 6 * HeavyXiraniteChubbyLung)
     std_grind = std_building("Grinding Unit", 50)
     std_grind(60 * FerriumPowder + 30 * SandleafPowder, 30 * DenseFerriumPowder)
     std_grind(60 * AmethystPowder + 30 * SandleafPowder, 30 * CrystonPowder)
@@ -527,10 +569,14 @@ def main() -> None:
     std_sg_transmute_pair(60 * Cuprium, 30 * CupriumGas)
     std_sg_transmute_pair(30 * Hetonite, 60 * HetoniteGas)
     std_sg_transmute_pair(30 * Pyrrolite, 30 * PyrroliteGas)
+    if args.event == CHUBBY_LUNG_EVENT:
+        std_sg_transmute_pair(30 * ProtoXiranCuprium, 30 * ProtoXiranCupriumGas)
     std_gas_reactor = std_building("Gas Reactor Globe", 50)
     std_gas_reactor(
         60 * HetoniteGas + 30 * Xiragen, 30 * PyrroliteGas, integer_inputs=AcridENV
     )
+    if args.event == CHUBBY_LUNG_EVENT:
+        std_gas_reactor(60 * CupriumGas + 30 * Xiragen, 30 * ProtoXiranCupriumGas, integer_inputs=StableENV)
     std_field = std_building(
         "Gas Dispersing Unit", 0.01
     )  # real cost is 0, but we don't want LP to treat it as free
@@ -560,6 +606,9 @@ def main() -> None:
     std_sell(HetonitePart, 48 * WulingStockBill)
     std_sell(SCWulingBattery, 54 * WulingStockBill)
     std_sell(PyrrolitePart, 70 * WulingStockBill)
+    if args.event == CHUBBY_LUNG_EVENT:
+        std_sell(XiraniteChubbyLung, 100 * WulingStockBill + 10 * BlueCert)
+        std_sell(HeavyXiraniteChubbyLung, 200 * WulingStockBill + 20 * BlueCert)
     std_test_area = std_building("Test Area Purification Node", 0)
     std_test_area(
         30 * Sewage, XirconEffluent, max_multiples=args.test_area_max_multiples
@@ -590,6 +639,8 @@ def main() -> None:
                 )
 
         pp_satisfaction(WulingStockBill, args.dollar_goal, 10000)
+        if args.blue_cert_goal:
+            pp_satisfaction(BlueCert, args.blue_cert_goal, 10000)
         # since the factory already covers its own power cost, the power
         # goal is only for additional buildings
         pp_satisfaction(Watt, args.power_goal, 10000)
