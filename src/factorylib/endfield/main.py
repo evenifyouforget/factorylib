@@ -140,8 +140,8 @@ def main() -> None:
         type=float,
         default=0.0,
         help="'-t mixed' only: bc/min target for the Prosperity Points blue-cert goal. "
-        + "0 disables it. 'blue cert' is a stand-in for whatever the currente event's "
-        + "currency is called.",
+        "0 disables it. 'blue cert' is a stand-in for whatever the "
+        "current event's currency is called.",
     )
     parser.add_argument(
         "-E",
