@@ -139,7 +139,9 @@ def main() -> None:
         "--blue-cert-goal",
         type=float,
         default=0.0,
-        help="'-t mixed' only: bc/min target for the Prosperity Points blue-cert goal. 0 disables it. 'blue cert' is a stand-in for whatever the currente event's currency is called.",
+        help="'-t mixed' only: bc/min target for the Prosperity Points blue-cert goal. "
+        + "0 disables it. 'blue cert' is a stand-in for whatever the currente event's "
+        + "currency is called.",
     )
     parser.add_argument(
         "-E",
@@ -496,9 +498,16 @@ def main() -> None:
     std_pack(30 * CupriumCanister + 30 * Xiranite, 60 * SeparatorCore)
     if args.event == CHUBBY_LUNG_EVENT:
         std_pack(120 * CupriumPart + 30 * Xiranite, 30 * ProtoCupriumFrame)
-        std_pack(30 * ProtoChubbyLungShell + 30 * ProtoCupriumFrame, 6 * XiraniteChubbyLung)
-        std_pack(6 * ProtoXiranCupriumPart + 6 * HeavyXiranite, 6 * ProtoXiranCupriumFrame)
-        std_pack(6 * ProtoChubbyLungHeavyShell + 6 * ProtoXiranCupriumFrame, 6 * HeavyXiraniteChubbyLung)
+        std_pack(
+            30 * ProtoChubbyLungShell + 30 * ProtoCupriumFrame, 6 * XiraniteChubbyLung
+        )
+        std_pack(
+            6 * ProtoXiranCupriumPart + 6 * HeavyXiranite, 6 * ProtoXiranCupriumFrame
+        )
+        std_pack(
+            6 * ProtoChubbyLungHeavyShell + 6 * ProtoXiranCupriumFrame,
+            6 * HeavyXiraniteChubbyLung,
+        )
     std_grind = std_building("Grinding Unit", 50)
     std_grind(60 * FerriumPowder + 30 * SandleafPowder, 30 * DenseFerriumPowder)
     std_grind(60 * AmethystPowder + 30 * SandleafPowder, 30 * CrystonPowder)
@@ -576,7 +585,11 @@ def main() -> None:
         60 * HetoniteGas + 30 * Xiragen, 30 * PyrroliteGas, integer_inputs=AcridENV
     )
     if args.event == CHUBBY_LUNG_EVENT:
-        std_gas_reactor(60 * CupriumGas + 30 * Xiragen, 30 * ProtoXiranCupriumGas, integer_inputs=StableENV)
+        std_gas_reactor(
+            60 * CupriumGas + 30 * Xiragen,
+            30 * ProtoXiranCupriumGas,
+            integer_inputs=StableENV,
+        )
     std_field = std_building(
         "Gas Dispersing Unit", 0.01
     )  # real cost is 0, but we don't want LP to treat it as free
