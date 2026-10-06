@@ -196,3 +196,17 @@ def test_dollar_and_power_goal_are_configurable_for_mixed_target(capsys):
     )
     assert lower_dollar_goal >= baseline
     assert lower_power_goal >= baseline
+
+def test_chubby_lung_event(capsys):
+    """
+    Test a run with the chubby lung scenario.
+    """
+    baseline = _extract_score(_run_main(["-E", "chubby-lung", "-D", "2400", "-B", "60"], capsys))
+    assert baseline == pytest.approx(3736.4940468750005)
+
+def test_chubby_lung_event_mixed(capsys):
+    """
+    Test a run with the chubby lung scenario, with mixed target.
+    """
+    baseline = _extract_score(_run_main(["-E", "chubby-lung", "-D", "2400", "-B", "60", "-t", "mixed"], capsys))
+    assert baseline == pytest.approx(28855.23972607676)
